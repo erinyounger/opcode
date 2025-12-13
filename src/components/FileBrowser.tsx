@@ -10,12 +10,16 @@ import {
   RefreshCw,
   Search,
   X,
+  FileText,
+  Image,
+  Code,
+  FileJson,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { api, type FileEntry } from "@/lib/api";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { open } from "@tauri-apps/plugin-shell";
 
 interface FileBrowserProps {
   projectPath: string;
@@ -28,6 +32,52 @@ interface FileTreeNode {
   children: Map<string, FileTreeNode>;
   parent?: FileTreeNode;
 }
+
+interface FileTypeFilter {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  extensions: string[];
+}
+
+const FILE_TYPE_FILTERS: FileTypeFilter[] = [
+  {
+    id: "all",
+    label: "全部",
+    icon: <File className="h-3.5 w-3.5" />,
+    extensions: [], // Empty means all files
+  },
+  {
+    id: "html",
+    label: "HTML/Web",
+    icon: <FileCode className="h-3.5 w-3.5" />,
+    extensions: ["html", "htm", "css", "js", "ts", "jsx", "tsx", "vue", "svelte", "scss", "less"],
+  },
+  {
+    id: "image",
+    label: "图片",
+    icon: <Image className="h-3.5 w-3.5" />,
+    extensions: ["png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "bmp", "tiff"],
+  },
+  {
+    id: "code",
+    label: "代码",
+    icon: <Code className="h-3.5 w-3.5" />,
+    extensions: ["py", "java", "cpp", "c", "h", "hpp", "rs", "go", "php", "rb", "swift", "kt", "scala", "clj"],
+  },
+  {
+    id: "document",
+    label: "文档",
+    icon: <FileText className="h-3.5 w-3.5" />,
+    extensions: ["md", "txt", "pdf", "doc", "docx", "rtf"],
+  },
+  {
+    id: "data",
+    label: "数据",
+    icon: <FileJson className="h-3.5 w-3.5" />,
+    extensions: ["json", "xml", "yaml", "yml", "csv", "toml", "ini", "conf"],
+  },
+];
 
 /**
  * FileBrowser component - Displays project file tree with HTML preview support
@@ -43,6 +93,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [serverUrl, setServerUrl] = useState<string | null>(null);
+  const [selectedFilter, setSelectedFilter] = useState<string>("all");
 
   // Build file tree from flat list
   const fileTree = useMemo(() => {
@@ -86,19 +137,67 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
     return root;
   }, [files]);
 
-  // Filter files based on search query
+  // Filter files based on search query and file type filter
   const filteredTree = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return fileTree;
+    const query = searchQuery.trim().toLowerCase();
+    const filter = FILE_TYPE_FILTERS.find((f) => f.id === selectedFilter);
+    
+    // Apply filters
+    let filteredFiles = files;
+    
+    // Apply file type filter
+    if (filter && filter.id !== "all" && filter.extensions.length > 0) {
+      const matchingFiles = new Set<string>();
+      
+      // First pass: find all matching files
+      files.forEach((file) => {
+        if (!file.is_directory) {
+          const ext = file.extension?.toLowerCase() || "";
+          if (filter.extensions.includes(ext)) {
+            matchingFiles.add(file.path);
+            // Add all parent directories
+            const parts = file.path.split(/[/\\]/).filter(Boolean);
+            for (let i = 1; i < parts.length; i++) {
+              const parentPath = parts.slice(0, i).join("/");
+              matchingFiles.add(parentPath);
+            }
+          }
+        }
+      });
+      
+      // Second pass: include directories and matching files
+      filteredFiles = files.filter((file) => {
+        if (file.is_directory) {
+          return matchingFiles.has(file.path);
+        }
+        return matchingFiles.has(file.path);
+      });
+    }
+    
+    // Apply search query filter
+    if (query) {
+      const matchingPaths = new Set<string>();
+      
+      // Find matching files and their parent directories
+      filteredFiles.forEach((file) => {
+        if (
+          file.name.toLowerCase().includes(query) ||
+          file.path.toLowerCase().includes(query)
+        ) {
+          matchingPaths.add(file.path);
+          // Add all parent directories
+          const parts = file.path.split(/[/\\]/).filter(Boolean);
+          for (let i = 1; i < parts.length; i++) {
+            const parentPath = parts.slice(0, i).join("/");
+            matchingPaths.add(parentPath);
+          }
+        }
+      });
+      
+      filteredFiles = filteredFiles.filter((file) => matchingPaths.has(file.path));
     }
 
-    const query = searchQuery.toLowerCase();
-    const filteredFiles = files.filter(
-      (file) =>
-        file.name.toLowerCase().includes(query) ||
-        file.path.toLowerCase().includes(query)
-    );
-
+    // Build tree from filtered files
     const root: FileTreeNode = {
       entry: {
         name: "",
@@ -136,19 +235,21 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
       }
     }
 
-    // Auto-expand all nodes when searching
-    const expandAll = (node: FileTreeNode, path: string = "") => {
-      if (node.children.size > 0) {
-        setExpandedPaths((prev) => new Set(prev).add(path || "/"));
-        node.children.forEach((child, name) => {
-          expandAll(child, path ? `${path}/${name}` : name);
-        });
-      }
-    };
-    expandAll(root);
+    // Auto-expand all nodes when searching or filtering
+    if (query || (filter && filter.id !== "all")) {
+      const expandAll = (node: FileTreeNode, path: string = "") => {
+        if (node.children.size > 0) {
+          setExpandedPaths((prev) => new Set(prev).add(path || "/"));
+          node.children.forEach((child, name) => {
+            expandAll(child, path ? `${path}/${name}` : name);
+          });
+        }
+      };
+      expandAll(root);
+    }
 
     return root;
-  }, [fileTree, searchQuery, files]);
+  }, [fileTree, searchQuery, files, selectedFilter]);
 
   // Load files on mount and when project path changes
   useEffect(() => {
@@ -249,7 +350,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
         });
         
         // Open in system browser (Chrome, etc.)
-        await openUrl(previewUrl);
+        await open(previewUrl);
       } catch (err) {
         console.error("Failed to start file server or open URL:", err);
         setError(`Failed to open file in browser: ${err instanceof Error ? err.message : String(err)}`);
@@ -370,7 +471,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
       </div>
 
       {/* Search */}
-      <div className="p-4 border-b border-border">
+      <div className="p-4 border-b border-border space-y-3">
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -389,6 +490,25 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
               <X className="h-4 w-4" />
             </Button>
           )}
+        </div>
+        
+        {/* File Type Filters */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {FILE_TYPE_FILTERS.map((filter) => (
+            <Button
+              key={filter.id}
+              variant={selectedFilter === filter.id ? "default" : "outline"}
+              size="sm"
+              className={cn(
+                "h-7 gap-1.5 whitespace-nowrap text-xs",
+                selectedFilter === filter.id && "bg-primary text-primary-foreground"
+              )}
+              onClick={() => setSelectedFilter(filter.id)}
+            >
+              {filter.icon}
+              {filter.label}
+            </Button>
+          ))}
         </div>
       </div>
 
