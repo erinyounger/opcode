@@ -30,6 +30,7 @@ import { ProxySettings } from "./ProxySettings";
 import { useTheme, useTrackEvent } from "@/hooks";
 import { analytics } from "@/lib/analytics";
 import { TabPersistenceService } from "@/services/tabPersistence";
+import { detectOS, osToWindowControlStyle } from "@/lib/osDetector";
 
 interface SettingsProps {
   /**
@@ -96,6 +97,11 @@ export const Settings: React.FC<SettingsProps> = ({
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   // Startup intro preference
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
+  // Window control style preference - auto-detect OS
+  const detectedOS = React.useMemo(() => detectOS(), []);
+  const defaultWindowControlStyle = React.useMemo(() => osToWindowControlStyle(detectedOS), [detectedOS]);
+  const [windowControlStyle, setWindowControlStyle] = useState<'macos' | 'windows' | 'linux'>(defaultWindowControlStyle);
+  const [isAutoDetect, setIsAutoDetect] = useState(true);
   
   // Load settings on mount
   useEffect(() => {
@@ -108,6 +114,19 @@ export const Settings: React.FC<SettingsProps> = ({
     (async () => {
       const pref = await api.getSetting('startup_intro_enabled');
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
+    })();
+    // Load window control style setting (default to auto-detected OS style if not set)
+    (async () => {
+      const pref = await api.getSetting('window_control_style');
+      if (pref && pref.trim() !== '' && ['macos', 'windows', 'linux'].includes(pref)) {
+        // User has manually set a style
+        setWindowControlStyle(pref as 'macos' | 'windows' | 'linux');
+        setIsAutoDetect(false);
+      } else {
+        // Use auto-detected OS style if no preference is saved
+        setWindowControlStyle(defaultWindowControlStyle);
+        setIsAutoDetect(true);
+      }
     })();
   }, []);
 
@@ -766,6 +785,127 @@ export const Settings: React.FC<SettingsProps> = ({
                           }
                         }}
                       />
+                    </div>
+
+                    {/* Window Control Style Selector */}
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <Label>Window Control Style</Label>
+                        <p className="text-caption text-muted-foreground">
+                          Choose the style of window control buttons. Auto detects your OS ({detectedOS === 'macos' ? 'macOS' : detectedOS === 'windows' ? 'Windows' : detectedOS === 'linux' ? 'Linux' : 'Unknown'}).
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
+                        <button
+                          onClick={async () => {
+                            // Clear saved style to enable auto-detection
+                            try {
+                              await api.saveSetting('window_control_style', '');
+                              setWindowControlStyle(defaultWindowControlStyle);
+                              setIsAutoDetect(true);
+                              trackEvent.settingsChanged('window_control_style', 'auto');
+                              setToast({ 
+                                message: `Window controls set to auto (${detectedOS === 'macos' ? 'macOS' : detectedOS === 'windows' ? 'Windows' : detectedOS === 'linux' ? 'Linux' : 'Unknown'} style)`, 
+                                type: 'success' 
+                              });
+                              // Reload the page to apply the change
+                              setTimeout(() => window.location.reload(), 500);
+                            } catch (e) {
+                              setToast({ message: 'Failed to update preference', type: 'error' });
+                            }
+                          }}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                            isAutoDetect
+                              ? "bg-background shadow-sm" 
+                              : "hover:bg-background/50"
+                          )}
+                        >
+                          {isAutoDetect && <Check className="h-3 w-3" />}
+                          Auto
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setWindowControlStyle('macos');
+                            setIsAutoDetect(false);
+                            try {
+                              await api.saveSetting('window_control_style', 'macos');
+                              trackEvent.settingsChanged('window_control_style', 'macos');
+                              setToast({ 
+                                message: 'Window controls set to macOS style', 
+                                type: 'success' 
+                              });
+                              // Reload the page to apply the change
+                              setTimeout(() => window.location.reload(), 500);
+                            } catch (e) {
+                              setToast({ message: 'Failed to update preference', type: 'error' });
+                            }
+                          }}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                            !isAutoDetect && windowControlStyle === 'macos'
+                              ? "bg-background shadow-sm" 
+                              : "hover:bg-background/50"
+                          )}
+                        >
+                          {!isAutoDetect && windowControlStyle === 'macos' && <Check className="h-3 w-3" />}
+                          macOS
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setWindowControlStyle('windows');
+                            setIsAutoDetect(false);
+                            try {
+                              await api.saveSetting('window_control_style', 'windows');
+                              trackEvent.settingsChanged('window_control_style', 'windows');
+                              setToast({ 
+                                message: 'Window controls set to Windows style', 
+                                type: 'success' 
+                              });
+                              // Reload the page to apply the change
+                              setTimeout(() => window.location.reload(), 500);
+                            } catch (e) {
+                              setToast({ message: 'Failed to update preference', type: 'error' });
+                            }
+                          }}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                            !isAutoDetect && windowControlStyle === 'windows'
+                              ? "bg-background shadow-sm" 
+                              : "hover:bg-background/50"
+                          )}
+                        >
+                          {!isAutoDetect && windowControlStyle === 'windows' && <Check className="h-3 w-3" />}
+                          Windows
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setWindowControlStyle('linux');
+                            setIsAutoDetect(false);
+                            try {
+                              await api.saveSetting('window_control_style', 'linux');
+                              trackEvent.settingsChanged('window_control_style', 'linux');
+                              setToast({ 
+                                message: 'Window controls set to Linux style', 
+                                type: 'success' 
+                              });
+                              // Reload the page to apply the change
+                              setTimeout(() => window.location.reload(), 500);
+                            } catch (e) {
+                              setToast({ message: 'Failed to update preference', type: 'error' });
+                            }
+                          }}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                            !isAutoDetect && windowControlStyle === 'linux'
+                              ? "bg-background shadow-sm" 
+                              : "hover:bg-background/50"
+                          )}
+                        >
+                          {!isAutoDetect && windowControlStyle === 'linux' && <Check className="h-3 w-3" />}
+                          Linux
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

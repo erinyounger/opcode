@@ -7,7 +7,8 @@ import {
   ChevronUp,
   X,
   Hash,
-  Wrench
+  Wrench,
+  FolderOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { TimelineNavigator } from "./TimelineNavigator";
 import { CheckpointSettings } from "./CheckpointSettings";
 import { SlashCommandsManager } from "./SlashCommandsManager";
+import { FileBrowser } from "./FileBrowser";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
@@ -93,6 +95,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [extractedSessionInfo, setExtractedSessionInfo] = useState<{ sessionId: string; projectId: string } | null>(null);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [timelineVersion, setTimelineVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showForkDialog, setShowForkDialog] = useState(false);
@@ -1306,7 +1309,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         {/* Main Content Area */}
         <div className={cn(
           "flex-1 overflow-hidden transition-all duration-300",
-          showTimeline && "sm:mr-96"
+          (showTimeline || showFileBrowser) && "sm:mr-96"
         )}>
           {showPreview ? (
             // Split pane layout when preview is active
@@ -1503,7 +1506,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
           <div className={cn(
             "fixed bottom-0 left-0 right-0 transition-all duration-300 z-50",
-            showTimeline && "sm:right-96"
+            (showTimeline || showFileBrowser) && "sm:right-96"
           )}>
             <FloatingPromptInput
               ref={floatingPromptRef}
@@ -1515,21 +1518,44 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               extraMenuItems={
                 <>
                   {effectiveSession && (
-                    <TooltipSimple content="Session Timeline" side="top">
-                      <motion.div
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setShowTimeline(!showTimeline)}
-                          className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                    <>
+                      <TooltipSimple content="Session Timeline" side="top">
+                        <motion.div
+                          whileTap={{ scale: 0.97 }}
+                          transition={{ duration: 0.15 }}
                         >
-                          <GitBranch className={cn("h-3.5 w-3.5", showTimeline && "text-primary")} />
-                        </Button>
-                      </motion.div>
-                    </TooltipSimple>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setShowTimeline(!showTimeline);
+                              if (showTimeline) setShowFileBrowser(false);
+                            }}
+                            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                          >
+                            <GitBranch className={cn("h-3.5 w-3.5", showTimeline && "text-primary")} />
+                          </Button>
+                        </motion.div>
+                      </TooltipSimple>
+                      <TooltipSimple content="Project Files" side="top">
+                        <motion.div
+                          whileTap={{ scale: 0.97 }}
+                          transition={{ duration: 0.15 }}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setShowFileBrowser(!showFileBrowser);
+                              if (showFileBrowser) setShowTimeline(false);
+                            }}
+                            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                          >
+                            <FolderOpen className={cn("h-3.5 w-3.5", showFileBrowser && "text-primary")} />
+                          </Button>
+                        </motion.div>
+                      </TooltipSimple>
+                    </>
                   )}
                   {messages.length > 0 && (
                     <Popover
@@ -1653,6 +1679,41 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     onFork={handleFork}
                     onCheckpointCreated={handleCheckpointCreated}
                     refreshVersion={timelineVersion}
+                  />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* File Browser */}
+        <AnimatePresence>
+          {showFileBrowser && projectPath && (
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="fixed right-0 top-0 h-full w-full sm:w-96 bg-background border-l border-border shadow-xl z-30 overflow-hidden"
+            >
+              <div className="h-full flex flex-col">
+                {/* File Browser Header */}
+                <div className="flex items-center justify-between p-4 border-b border-border">
+                  <h3 className="text-lg font-semibold">Project Files</h3>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowFileBrowser(false)}
+                    className="h-8 w-8"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                
+                {/* File Browser Content */}
+                <div className="flex-1 overflow-hidden">
+                  <FileBrowser
+                    projectPath={projectPath}
                   />
                 </div>
               </div>

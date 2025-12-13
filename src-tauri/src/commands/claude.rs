@@ -9,6 +9,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
+use axum::{
+    http::Method,
+    Router,
+};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    services::ServeDir,
+};
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
 
 /// Global state to track current Claude process
 pub struct ClaudeProcessState {
@@ -19,6 +29,23 @@ impl Default for ClaudeProcessState {
     fn default() -> Self {
         Self {
             current_process: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+/// Global state to track file server
+pub struct FileServerState {
+    pub server_url: Arc<Mutex<Option<String>>>,
+    pub project_path: Arc<Mutex<Option<String>>>,
+    pub port: Arc<Mutex<Option<u16>>>,
+}
+
+impl Default for FileServerState {
+    fn default() -> Self {
+        Self {
+            server_url: Arc::new(Mutex::new(None)),
+            project_path: Arc::new(Mutex::new(None)),
+            port: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -1650,6 +1677,107 @@ pub async fn list_directory_contents(directory_path: String) -> Result<Vec<FileE
     Ok(entries)
 }
 
+/// Recursively lists all files and directories in a project root
+#[tauri::command]
+pub async fn list_project_files(project_path: String) -> Result<Vec<FileEntry>, String> {
+    log::info!("Recursively listing project files: '{}'", project_path);
+
+    if project_path.trim().is_empty() {
+        return Err("Project path cannot be empty".to_string());
+    }
+
+    let root_path = PathBuf::from(&project_path);
+    if !root_path.exists() {
+        return Err(format!("Project path does not exist: {}", project_path));
+    }
+
+    if !root_path.is_dir() {
+        return Err(format!("Project path is not a directory: {}", project_path));
+    }
+
+    let mut entries = Vec::new();
+    let root_path_canonical = root_path
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
+
+    // Recursively walk the directory tree
+    fn walk_directory(
+        dir_path: &PathBuf,
+        root_path: &PathBuf,
+        entries: &mut Vec<FileEntry>,
+    ) -> Result<(), String> {
+        let dir_entries = fs::read_dir(dir_path)
+            .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+        for entry in dir_entries {
+            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let entry_path = entry.path();
+
+            // Skip hidden files/directories (except .claude)
+            if let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with('.') && name != ".claude" {
+                    continue;
+                }
+            }
+
+            let metadata = entry
+                .metadata()
+                .map_err(|e| format!("Failed to read metadata: {}", e))?;
+
+            // Calculate relative path from project root
+            let relative_path = entry_path
+                .strip_prefix(root_path)
+                .map_err(|e| format!("Failed to calculate relative path: {}", e))?;
+
+            let name = entry_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+
+            let extension = if metadata.is_file() {
+                entry_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.to_string())
+            } else {
+                None
+            };
+
+            // Normalize path: convert backslashes to forward slashes for URL compatibility
+            let normalized_path = relative_path
+                .to_string_lossy()
+                .replace('\\', "/");
+            
+            entries.push(FileEntry {
+                name,
+                path: normalized_path,
+                is_directory: metadata.is_dir(),
+                size: metadata.len(),
+                extension,
+            });
+
+            // Recursively process subdirectories
+            if metadata.is_dir() {
+                walk_directory(&entry_path, root_path, entries)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    walk_directory(&root_path_canonical, &root_path_canonical, &mut entries)?;
+
+    // Sort: directories first, then files, alphabetically within each group
+    entries.sort_by(|a, b| match (a.is_directory, b.is_directory) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
+    });
+
+    Ok(entries)
+}
+
 /// Search for files and directories matching a pattern
 #[tauri::command]
 pub async fn search_files(base_path: String, query: String) -> Result<Vec<FileEntry>, String> {
@@ -2420,6 +2548,121 @@ pub async fn validate_hook_command(command: String) -> Result<serde_json::Value,
         }
         Err(e) => Err(format!("Failed to validate command: {}", e)),
     }
+}
+
+/// Starts a local HTTP server to serve project files
+#[tauri::command]
+pub async fn start_file_server(
+    app: AppHandle,
+    project_path: String,
+) -> Result<serde_json::Value, String> {
+    log::info!("Starting file server for project: {}", project_path);
+
+    // Check if server is already running for this project
+    let state = app.state::<FileServerState>();
+    let current_project = state.project_path.lock().await.clone();
+    
+    if let Some(ref current) = current_project {
+        if *current == project_path {
+            // Server already running for this project
+            let url = state.server_url.lock().await.clone();
+            let port = state.port.lock().await;
+            if let (Some(url), Some(port)) = (url, *port) {
+                return Ok(serde_json::json!({
+                    "url": url,
+                    "port": port,
+                    "already_running": true
+                }));
+            }
+        }
+    }
+
+    // Validate project path
+    let path = PathBuf::from(&project_path);
+    if !path.exists() {
+        return Err(format!("Project path does not exist: {}", project_path));
+    }
+    if !path.is_dir() {
+        return Err(format!("Project path is not a directory: {}", project_path));
+    }
+
+    // Canonicalize path for security
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
+
+    // Find an available port starting from 8080
+    let mut port = 8080u16;
+    let listener = loop {
+        match TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await {
+            Ok(listener) => break listener,
+            Err(_) => {
+                if port >= 65535 {
+                    return Err("No available ports found".to_string());
+                }
+                port += 1;
+            }
+        }
+    };
+
+    let local_addr = listener.local_addr()
+        .map_err(|e| format!("Failed to get local address: {}", e))?;
+    let actual_port = local_addr.port();
+
+    // Create router with static file serving
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::GET, Method::HEAD])
+        .allow_headers(Any);
+
+    // Create ServeDir with proper configuration
+    // ServeDir automatically handles URL decoding and path resolution
+    let serve_dir = ServeDir::new(&canonical_path);
+    
+    let app_router = Router::new()
+        .fallback_service(serve_dir)
+        .layer(cors);
+    
+    log::info!("File server configured to serve from: {:?}", canonical_path);
+
+    // Spawn server task
+    let server_url = format!("http://127.0.0.1:{}", actual_port);
+    let server_url_clone = server_url.clone();
+
+    tokio::spawn(async move {
+        let server = axum::serve(listener, app_router);
+        
+        log::info!("File server started on {}", server_url_clone);
+        if let Err(e) = server.await {
+            log::error!("File server error: {}", e);
+        }
+    });
+
+    // Update state
+    {
+        let mut url_guard = state.server_url.lock().await;
+        *url_guard = Some(server_url.clone());
+        
+        let mut path_guard = state.project_path.lock().await;
+        *path_guard = Some(project_path);
+        
+        let mut port_guard = state.port.lock().await;
+        *port_guard = Some(actual_port);
+    }
+
+    Ok(serde_json::json!({
+        "url": server_url,
+        "port": actual_port,
+        "already_running": false
+    }))
+}
+
+/// Gets the current file server URL if running
+#[tauri::command]
+pub async fn get_file_server_url(app: AppHandle) -> Result<Option<String>, String> {
+    let state = app.state::<FileServerState>();
+    let url = state.server_url.lock().await.clone();
+    Ok(url)
 }
 
 #[cfg(test)]

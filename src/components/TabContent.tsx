@@ -31,7 +31,7 @@ interface TabPanelProps {
 const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const { updateTab, closeTab } = useTabState();
   const [projects, setProjects] = React.useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
+  const [selectedProject, setSelectedProject] = React.useState<Project | null>(tab.selectedProject || null);
   const [sessions, setSessions] = React.useState<Session[]>([]);
   const [loading, setLoading] = React.useState(false);
   
@@ -43,8 +43,34 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   useEffect(() => {
     if (isActive && tab.type === 'projects') {
       loadProjects();
+      // Restore selected project from tab state
+      if (tab.selectedProject) {
+        setSelectedProject(tab.selectedProject);
+        // Load sessions for the selected project
+        loadSessionsForProject(tab.selectedProject);
+      } else {
+        setSelectedProject(null);
+        setSessions([]);
+      }
     }
   }, [isActive, tab.type]);
+  
+  // Sync selectedProject with tab state when tab.selectedProject changes
+  useEffect(() => {
+    if (tab.type === 'projects') {
+      if (tab.selectedProject) {
+        // Only update if it's different from current state
+        if (!selectedProject || selectedProject.id !== tab.selectedProject.id) {
+          setSelectedProject(tab.selectedProject);
+          // Load sessions for the selected project
+          loadSessionsForProject(tab.selectedProject);
+        }
+      } else {
+        setSelectedProject(null);
+        setSessions([]);
+      }
+    }
+  }, [tab.selectedProject, tab.type]);
   
   const loadProjects = async () => {
     try {
@@ -60,25 +86,32 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
   
-  const handleProjectClick = async (project: Project) => {
+  const loadSessionsForProject = async (project: Project) => {
     try {
       setLoading(true);
       setError(null);
       const sessionList = await api.getProjectSessions(project.id);
       setSessions(sessionList);
-      setSelectedProject(project);
-      
-      // Update tab title to show project name
-      const projectName = project.path.split('/').pop() || 'Project';
-      updateTab(tab.id, {
-        title: projectName
-      });
     } catch (err) {
       console.error("Failed to load sessions:", err);
       setError("Failed to load sessions for this project.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleProjectClick = async (project: Project) => {
+    setSelectedProject(project);
+    
+    // Save selected project to tab state
+    const projectName = project.path.split('/').pop() || 'Project';
+    updateTab(tab.id, {
+      title: projectName,
+      selectedProject: project
+    });
+    
+    // Load sessions for the project
+    await loadSessionsForProject(project);
   };
 
   const handleOpenProject = async () => {
@@ -154,9 +187,10 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                               onClick={() => {
                                 setSelectedProject(null);
                                 setSessions([]);
-                                // Restore tab title to "Projects"
+                                // Restore tab title to "Projects" and clear selectedProject
                                 updateTab(tab.id, {
-                                  title: 'Projects'
+                                  title: 'Projects',
+                                  selectedProject: undefined
                                 });
                               }}
                               className="h-8 w-8 -ml-2"
@@ -215,12 +249,14 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                         projectPath={selectedProject.path}
                         onSessionClick={(session) => {
                           // Update current tab to show the selected session
+                          // Preserve selectedProject so we can return to session list
                           updateTab(tab.id, {
                             type: 'chat',
                             title: session.project_path.split('/').pop() || 'Session',
                             sessionId: session.id,
                             sessionData: session,
-                            initialProjectPath: session.project_path
+                            initialProjectPath: session.project_path,
+                            selectedProject: selectedProject // Preserve selected project
                           });
                         }}
                         onEditClaudeFile={(file: ClaudeMdFile) => {
@@ -252,11 +288,22 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               session={tab.sessionData} // Pass the full session object if available
               initialProjectPath={tab.initialProjectPath || tab.sessionId}
               onBack={() => {
-                // Go back to projects view in the same tab
-                updateTab(tab.id, {
-                  type: 'projects',
-                  title: 'Projects',
-                });
+                // If we have a selectedProject, go back to session list for that project
+                if (tab.selectedProject) {
+                  // Restore session list view for the selected project
+                  updateTab(tab.id, {
+                    type: 'projects',
+                    title: tab.selectedProject.path.split('/').pop() || 'Project',
+                    selectedProject: tab.selectedProject // Keep selectedProject
+                  });
+                } else {
+                  // Otherwise go back to projects list
+                  updateTab(tab.id, {
+                    type: 'projects',
+                    title: 'Projects',
+                    selectedProject: undefined
+                  });
+                }
               }}
               onProjectPathChange={(path: string) => {
                 // Update tab title with directory name

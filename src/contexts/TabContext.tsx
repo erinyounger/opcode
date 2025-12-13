@@ -13,6 +13,7 @@ export interface Tab {
   claudeFile?: any; // for claude-file tabs - stores full ClaudeMdFile object
   initialProjectPath?: string; // for chat tabs
   projectPath?: string; // for agent-execution tabs
+  selectedProject?: any; // for projects tabs - stores the currently selected Project object
   status: 'active' | 'idle' | 'running' | 'complete' | 'error';
   hasUnsavedChanges: boolean;
   order: number;

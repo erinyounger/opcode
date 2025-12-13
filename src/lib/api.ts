@@ -1102,6 +1102,29 @@ export const api = {
   },
 
   /**
+   * Recursively lists all files and directories in a project root
+   */
+  async listProjectFiles(projectPath: string): Promise<FileEntry[]> {
+    return apiCall("list_project_files", { projectPath });
+  },
+
+  /**
+   * Starts a local HTTP server to serve project files
+   * @returns Promise resolving to server URL and port
+   */
+  async startFileServer(projectPath: string): Promise<{ url: string; port: number; already_running?: boolean }> {
+    return apiCall("start_file_server", { projectPath });
+  },
+
+  /**
+   * Gets the current file server URL if running
+   * @returns Promise resolving to server URL or null
+   */
+  async getFileServerUrl(): Promise<string | null> {
+    return apiCall("get_file_server_url", {});
+  },
+
+  /**
    * Gets overall usage statistics
    * @returns Promise resolving to usage statistics
    */
