@@ -3,6 +3,7 @@ use clap::Parser;
 mod checkpoint;
 mod claude_binary;
 mod commands;
+mod logger;
 mod process;
 mod web_server;
 
@@ -21,7 +22,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    logger::init_logger();
 
     let args = Args::parse();
 

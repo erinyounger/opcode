@@ -15,38 +15,9 @@ import { Label } from "@/components/ui/label";
 import { Popover } from "@/components/ui/popover";
 import { api, type Session } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { listen } from "@tauri-apps/api/event";
 
-// Conditional imports for Tauri APIs
-let tauriListen: any;
 type UnlistenFn = () => void;
-
-try {
-  if (typeof window !== 'undefined' && window.__TAURI__) {
-    tauriListen = require("@tauri-apps/api/event").listen;
-  }
-} catch (e) {
-  console.log('[ClaudeCodeSession] Tauri APIs not available, using web mode');
-}
-
-// Web-compatible replacements
-const listen = tauriListen || ((eventName: string, callback: (event: any) => void) => {
-  console.log('[ClaudeCodeSession] Setting up DOM event listener for:', eventName);
-
-  // In web mode, listen for DOM events
-  const domEventHandler = (event: any) => {
-    console.log('[ClaudeCodeSession] DOM event received:', eventName, event.detail);
-    // Simulate Tauri event structure
-    callback({ payload: event.detail });
-  };
-
-  window.addEventListener(eventName, domEventHandler);
-
-  // Return unlisten function
-  return Promise.resolve(() => {
-    console.log('[ClaudeCodeSession] Removing DOM event listener for:', eventName);
-    window.removeEventListener(eventName, domEventHandler);
-  });
-});
 import { StreamMessage } from "./StreamMessage";
 import { FloatingPromptInput, type FloatingPromptInputRef } from "./FloatingPromptInput";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -199,7 +170,18 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Filter out messages that shouldn't be displayed
   const displayableMessages = useMemo(() => {
+    let hasShownSystemInit = false;
+    
     return messages.filter((message, index) => {
+      // Only show the first System Initialized message
+      if (message.type === "system" && message.subtype === "init") {
+        if (hasShownSystemInit) {
+          return false; // Hide subsequent init messages
+        }
+        hasShownSystemInit = true;
+        return true;
+      }
+      
       // Skip meta messages that don't have meaningful content
       if (message.isMeta && !message.leafUuid && !message.summary) {
         return false;
@@ -539,6 +521,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         // --------------------------------------------------------------------
 
         console.log('[ClaudeCodeSession] Setting up generic event listeners first');
+        console.log('[ClaudeCodeSession] Using Tauri listen API');
 
         let currentSessionId: string | null = claudeSessionId || effectiveSession?.id || null;
 
@@ -1166,6 +1149,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   };
 
   // Cleanup event listeners and track mount state
+  // IMPORTANT: This cleanup should only run on component unmount, not when props change
+  // Using empty dependency array ensures cleanup only happens when component is actually removed
   useEffect(() => {
     isMountedRef.current = true;
     
@@ -1175,14 +1160,18 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       isListeningRef.current = false;
       
       // Track session completion with engagement metrics
-      if (effectiveSession) {
+      // Use refs to get current values instead of dependencies
+      const currentSession = effectiveSession;
+      const currentMessages = messages;
+      
+      if (currentSession) {
         trackEvent.sessionCompleted();
         
         // Track session engagement
         const sessionDuration = sessionStartTime.current ? Date.now() - sessionStartTime.current : 0;
-        const messageCount = messages.filter(m => m.user_message).length;
+        const messageCount = currentMessages.filter(m => m.user_message).length;
         const toolsUsed = new Set<string>();
-        messages.forEach(msg => {
+        currentMessages.forEach(msg => {
           if (msg.type === 'assistant' && msg.message?.content) {
             const tools = msg.message.content.filter((c: any) => c.type === 'tool_use');
             tools.forEach((tool: any) => toolsUsed.add(tool.name));
@@ -1205,18 +1194,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         });
       }
       
-      // Clean up listeners
+      // Clean up listeners - only clean up listeners for THIS component instance
+      // This ensures other tab's listeners are not affected
       unlistenRefs.current.forEach(unlisten => unlisten());
       unlistenRefs.current = [];
       
       // Clear checkpoint manager when session ends
-      if (effectiveSession) {
-        api.clearCheckpointManager(effectiveSession.id).catch(err => {
+      if (currentSession) {
+        api.clearCheckpointManager(currentSession.id).catch(err => {
           console.error("Failed to clear checkpoint manager:", err);
         });
       }
     };
-  }, [effectiveSession, projectPath]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array - only cleanup on unmount
 
   const messagesList = (
     <div

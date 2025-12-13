@@ -125,9 +125,11 @@ export const TodoWidget: React.FC<{ todos: any[]; result?: any }> = ({ todos, re
  * Widget for LS (List Directory) tool
  */
 export const LSWidget: React.FC<{ path: string; result?: any }> = ({ path, result }) => {
-  // If we have a result, show it using the LSResultWidget
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  // Extract result content if available
+  let resultContent = '';
   if (result) {
-    let resultContent = '';
     if (typeof result.content === 'string') {
       resultContent = result.content;
     } else if (result.content && typeof result.content === 'object') {
@@ -141,32 +143,42 @@ export const LSWidget: React.FC<{ path: string; result?: any }> = ({ path, resul
         resultContent = JSON.stringify(result.content, null, 2);
       }
     }
-    
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-          <FolderOpen className="h-4 w-4 text-primary" />
-          <span className="text-sm">Directory contents for:</span>
-          <code className="text-sm font-mono bg-background px-2 py-0.5 rounded">
-            {path}
-          </code>
-        </div>
-        {resultContent && <LSResultWidget content={resultContent} />}
-      </div>
-    );
   }
   
+  // Build title: "List" + path
+  const pathName = path.split(/[/\\]/).pop() || path;
+  const title = `List ${pathName}`;
+  
   return (
-    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-      <FolderOpen className="h-4 w-4 text-primary" />
-      <span className="text-sm">Listing directory:</span>
-      <code className="text-sm font-mono bg-background px-2 py-0.5 rounded">
-        {path}
-      </code>
-      {!result && (
-        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-          <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-          <span>Loading...</span>
+    <div className="rounded-lg border border-gray-500/20 bg-gray-500/5 overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-500/10 transition-colors"
+        disabled={!result}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <FolderOpen className="h-4 w-4 text-primary flex-shrink-0" />
+          <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
+            {title}
+          </span>
+          {!result && (
+            <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+              <span>Loading...</span>
+            </div>
+          )}
+        </div>
+        {result && (
+          <ChevronRight className={cn(
+            "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
+            isExpanded && "rotate-90"
+          )} />
+        )}
+      </button>
+      
+      {isExpanded && result && resultContent && (
+        <div className="px-4 pb-4 pt-2 border-t border-gray-500/20">
+          <LSResultWidget content={resultContent} />
         </div>
       )}
     </div>
@@ -348,9 +360,11 @@ export const LSResultWidget: React.FC<{ content: string }> = ({ content }) => {
  * Widget for Read tool
  */
 export const ReadWidget: React.FC<{ filePath: string; result?: any }> = ({ filePath, result }) => {
-  // If we have a result, show it using the ReadResultWidget
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  // Extract result content if available
+  let resultContent = '';
   if (result) {
-    let resultContent = '';
     if (typeof result.content === 'string') {
       resultContent = result.content;
     } else if (result.content && typeof result.content === 'object') {
@@ -364,32 +378,42 @@ export const ReadWidget: React.FC<{ filePath: string; result?: any }> = ({ fileP
         resultContent = JSON.stringify(result.content, null, 2);
       }
     }
-    
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-          <FileText className="h-4 w-4 text-primary" />
-          <span className="text-sm">File content:</span>
-          <code className="text-sm font-mono bg-background px-2 py-0.5 rounded flex-1 truncate">
-            {filePath}
-          </code>
-        </div>
-        {resultContent && <ReadResultWidget content={resultContent} filePath={filePath} />}
-      </div>
-    );
   }
   
+  // Build title: "Read" + filename
+  const fileName = filePath.split(/[/\\]/).pop() || filePath;
+  const title = `Read ${fileName}`;
+  
   return (
-    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-      <FileText className="h-4 w-4 text-primary" />
-      <span className="text-sm">Reading file:</span>
-      <code className="text-sm font-mono bg-background px-2 py-0.5 rounded flex-1 truncate">
-        {filePath}
-      </code>
-      {!result && (
-        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-          <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-          <span>Loading...</span>
+    <div className="rounded-lg border border-gray-500/20 bg-gray-500/5 overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-500/10 transition-colors"
+        disabled={!result}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+          <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
+            {title}
+          </span>
+          {!result && (
+            <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+              <span>Loading...</span>
+            </div>
+          )}
+        </div>
+        {result && (
+          <ChevronRight className={cn(
+            "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
+            isExpanded && "rotate-90"
+          )} />
+        )}
+      </button>
+      
+      {isExpanded && result && resultContent && (
+        <div className="px-4 pb-4 pt-2 border-t border-gray-500/20">
+          <ReadResultWidget content={resultContent} filePath={filePath} />
         </div>
       )}
     </div>
@@ -572,6 +596,8 @@ export const ReadResultWidget: React.FC<{ content: string; filePath?: string }> 
  * Widget for Glob tool
  */
 export const GlobWidget: React.FC<{ pattern: string; result?: any }> = ({ pattern, result }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
   // Extract result content if available
   let resultContent = '';
   let isError = false;
@@ -593,31 +619,45 @@ export const GlobWidget: React.FC<{ pattern: string; result?: any }> = ({ patter
     }
   }
   
+  const title = `Glob ${pattern}`;
+  
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-        <Search className="h-4 w-4 text-primary" />
-        <span className="text-sm">Searching for pattern:</span>
-        <code className="text-sm font-mono bg-background px-2 py-0.5 rounded">
-          {pattern}
-        </code>
-        {!result && (
-          <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-            <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-            <span>Searching...</span>
-          </div>
+    <div className="rounded-lg border border-gray-500/20 bg-gray-500/5 overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-500/10 transition-colors"
+        disabled={!result}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Search className="h-4 w-4 text-primary flex-shrink-0" />
+          <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
+            {title}
+          </span>
+          {!result && (
+            <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+              <span>Searching...</span>
+            </div>
+          )}
+        </div>
+        {result && (
+          <ChevronRight className={cn(
+            "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
+            isExpanded && "rotate-90"
+          )} />
         )}
-      </div>
+      </button>
       
-      {/* Show result if available */}
-      {result && (
-        <div className={cn(
-          "p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
-          isError 
-            ? "border-red-500/20 bg-red-500/5 text-red-400" 
-            : "border-green-500/20 bg-green-500/5 text-green-300"
-        )}>
-          {resultContent || (isError ? "Search failed" : "No matches found")}
+      {isExpanded && result && (
+        <div className="px-4 pb-4 pt-2 border-t border-gray-500/20">
+          <div className={cn(
+            "p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
+            isError 
+              ? "border-red-500/20 bg-red-500/5 text-red-400" 
+              : "border-green-500/20 bg-green-500/5 text-green-300"
+          )}>
+            {resultContent || (isError ? "Search failed" : "No matches found")}
+          </div>
         </div>
       )}
     </div>
@@ -632,6 +672,8 @@ export const BashWidget: React.FC<{
   description?: string;
   result?: any;
 }> = ({ command, description, result }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
   // Extract result content if available
   let resultContent = '';
   let isError = false;
@@ -653,42 +695,53 @@ export const BashWidget: React.FC<{
     }
   }
   
+  // Build title: "Terminal" + description or command
+  const title = description ? `Terminal ${description}` : `Terminal ${command}`;
+  
   return (
-    <div className="rounded-lg border bg-background overflow-hidden">
-      <div className="px-4 py-2 bg-muted/50 flex items-center gap-2 border-b">
-        <Terminal className="h-3.5 w-3.5 text-green-500" />
-        <span className="text-xs font-mono text-muted-foreground">Terminal</span>
-        {description && (
-          <>
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">{description}</span>
-          </>
-        )}
-        {/* Show loading indicator when no result yet */}
-        {!result && (
-          <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-            <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
-            <span>Running...</span>
-          </div>
-        )}
-      </div>
-      <div className="p-4 space-y-3">
-        <code className="text-xs font-mono text-green-400 block">
-          $ {command}
-        </code>
-        
-        {/* Show result if available */}
+    <div className="rounded-lg border border-gray-500/20 bg-gray-500/5 overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-500/10 transition-colors"
+        disabled={!result}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Terminal className="h-4 w-4 text-green-500 flex-shrink-0" />
+          <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
+            {title}
+          </span>
+          {!result && (
+            <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+              <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+              <span>Running...</span>
+            </div>
+          )}
+        </div>
         {result && (
-          <div className={cn(
-            "mt-3 p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
-            isError 
-              ? "border-red-500/20 bg-red-500/5 text-red-400" 
-              : "border-green-500/20 bg-green-500/5 text-green-300"
-          )}>
-            {resultContent || (isError ? "Command failed" : "Command completed")}
-          </div>
+          <ChevronRight className={cn(
+            "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
+            isExpanded && "rotate-90"
+          )} />
         )}
-      </div>
+      </button>
+      
+      {isExpanded && result && (
+        <div className="px-4 pb-4 pt-2 border-t border-gray-500/20">
+          <div className="space-y-3">
+            <code className="text-xs font-mono text-green-400 block">
+              $ {command}
+            </code>
+            <div className={cn(
+              "p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
+              isError 
+                ? "border-red-500/20 bg-red-500/5 text-red-400" 
+                : "border-green-500/20 bg-green-500/5 text-green-300"
+            )}>
+              {resultContent || (isError ? "Command failed" : "Command completed")}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -874,7 +927,7 @@ export const GrepWidget: React.FC<{
   exclude?: string;
   result?: any;
 }> = ({ pattern, include, path, exclude, result }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   
   // Extract result content if available
   let resultContent = '';
@@ -922,22 +975,47 @@ export const GrepWidget: React.FC<{
   };
   
   const grepResults = result && !isError ? parseGrepResults(resultContent) : [];
+  const [innerExpanded, setInnerExpanded] = useState(false);
+  
+  // Build title: "Grep" + pattern
+  const title = `Grep ${pattern}`;
   
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
-        <Search className="h-4 w-4 text-emerald-500" />
-        <span className="text-sm font-medium">Searching with grep</span>
-        {!result && (
-          <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-            <div className="h-2 w-2 bg-emerald-500 rounded-full animate-pulse" />
-            <span>Searching...</span>
-          </div>
+    <div className="rounded-lg border border-gray-500/20 bg-gray-500/5 overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-500/10 transition-colors"
+        disabled={!result}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Search className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+          <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
+            {title}
+          </span>
+          {!result && (
+            <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+              <div className="h-2 w-2 bg-emerald-500 rounded-full animate-pulse" />
+              <span>Searching...</span>
+            </div>
+          )}
+          {result && grepResults.length > 0 && (
+            <span className="ml-2 text-xs text-muted-foreground flex-shrink-0">
+              ({grepResults.length} matches)
+            </span>
+          )}
+        </div>
+        {result && (
+          <ChevronRight className={cn(
+            "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
+            isExpanded && "rotate-90"
+          )} />
         )}
-      </div>
+      </button>
       
-      {/* Search Parameters */}
-      <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+      {isExpanded && result && (
+        <div className="px-4 pb-4 pt-2 border-t border-gray-500/20 space-y-2">
+          {/* Search Parameters */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
         <div className="grid gap-2">
           {/* Pattern with regex highlighting */}
           <div className="flex items-start gap-3">
@@ -992,11 +1070,10 @@ export const GrepWidget: React.FC<{
             </div>
           )}
         </div>
-      </div>
-      
-      {/* Results */}
-      {result && (
-        <div className="space-y-2">
+          </div>
+          
+          {/* Results */}
+          <div className="space-y-2">
           {isError ? (
             <div className="flex items-center gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/20">
               <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
@@ -1007,10 +1084,10 @@ export const GrepWidget: React.FC<{
           ) : grepResults.length > 0 ? (
             <>
               <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setInnerExpanded(!innerExpanded)}
+                className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
-                {isExpanded ? (
+                {innerExpanded ? (
                   <ChevronDown className="h-3.5 w-3.5" />
                 ) : (
                   <ChevronRight className="h-3.5 w-3.5" />
@@ -1018,7 +1095,7 @@ export const GrepWidget: React.FC<{
                 <span>{grepResults.length} matches found</span>
               </button>
               
-              {isExpanded && (
+              {innerExpanded && (
                 <div className="rounded-lg border bg-background overflow-hidden">
                   <div className="max-h-[400px] overflow-y-auto">
                     {grepResults.map((match, idx) => {
@@ -1070,6 +1147,7 @@ export const GrepWidget: React.FC<{
               </div>
             </div>
           )}
+          </div>
         </div>
       )}
     </div>
@@ -1876,14 +1954,14 @@ export const SystemInitializedWidget: React.FC<{
   
   return (
     <Card className="border-blue-500/20 bg-blue-500/5">
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
-          <Settings className="h-5 w-5 text-blue-500 mt-0.5" />
-          <div className="flex-1 space-y-4">
-            <h4 className="font-semibold text-sm">System Initialized</h4>
+      <CardContent className="p-3">
+        <div className="flex items-start gap-2">
+          <Settings className="h-4 w-4 text-blue-500 mt-0.5" />
+          <div className="flex-1 space-y-3">
+            <h4 className="font-semibold text-xs">System Initialized</h4>
             
             {/* Session Info */}
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {sessionId && (
                 <div className="flex items-center gap-2 text-xs">
                   <Fingerprint className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1917,7 +1995,7 @@ export const SystemInitializedWidget: React.FC<{
             
             {/* Regular Tools */}
             {regularTools.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-xs font-medium text-muted-foreground">
@@ -1944,7 +2022,7 @@ export const SystemInitializedWidget: React.FC<{
             
             {/* MCP Tools */}
             {mcpTools.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <button
                   onClick={() => setMcpExpanded(!mcpExpanded)}
                   className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"

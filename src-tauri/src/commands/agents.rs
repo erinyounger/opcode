@@ -790,10 +790,26 @@ fn create_agent_system_command(
     args: Vec<String>,
     project_path: &str,
 ) -> Command {
+    // On Windows, if the claude path is a .cmd or .bat file, we need to execute it through cmd.exe
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        if claude_path.ends_with(".cmd") || claude_path.ends_with(".bat") {
+            info!("Windows: Executing .cmd/.bat file through cmd.exe: {}", claude_path);
+            let mut cmd = create_command_with_env("cmd.exe");
+            cmd.arg("/C");
+            cmd.arg(claude_path);
+            cmd
+        } else {
+            create_command_with_env(claude_path)
+        }
+    };
+
+    #[cfg(not(target_os = "windows"))]
     let mut cmd = create_command_with_env(claude_path);
 
     // Add all arguments
-    for arg in args {
+    info!("Agent command arguments: {:?}", args);
+    for arg in &args {
         cmd.arg(arg);
     }
 
@@ -801,6 +817,8 @@ fn create_agent_system_command(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    info!("Agent command working directory: {}", project_path);
 
     cmd
 }

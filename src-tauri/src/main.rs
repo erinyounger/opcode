@@ -4,6 +4,7 @@
 mod checkpoint;
 mod claude_binary;
 mod commands;
+mod logger;
 mod process;
 
 use checkpoint::state::CheckpointState;
@@ -52,8 +53,8 @@ use tauri::Manager;
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
 fn main() {
-    // Initialize logger
-    env_logger::init();
+    // Initialize logger to file
+    logger::init_logger();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

@@ -114,10 +114,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       
       const renderedCard = (
         <Card className={cn("border-primary/20 bg-primary/5", className)}>
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <Bot className="h-5 w-5 text-primary mt-0.5" />
-              <div className="flex-1 space-y-2 min-w-0">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <Bot className="h-4 w-4 text-primary mt-0.5" />
+              <div className="flex-1 space-y-1.5 min-w-0">
                 {msg.content && Array.isArray(msg.content) && msg.content.map((content: any, idx: number) => {
                   // Text content - render as markdown
                   if (content.type === "text") {
@@ -279,10 +279,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     // Fallback to basic tool display
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="space-y-2">
+                      <div key={idx} className="space-y-1.5">
                         <div className="flex items-center gap-2">
-                          <Terminal className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">
+                          <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs font-medium">
                             Using tool: <code className="font-mono">{content.name}</code>
                           </span>
                         </div>
@@ -327,10 +327,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       
       const renderedCard = (
         <Card className={cn("border-muted-foreground/20 bg-muted/20", className)}>
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <User className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div className="flex-1 space-y-2 min-w-0">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <User className="h-4 w-4 text-muted-foreground mt-0.5" />
+              <div className="flex-1 space-y-1.5 min-w-0">
                 {/* Handle content that is a simple string (e.g. from user commands) */}
                 {(typeof msg.content === 'string' || (msg.content && !Array.isArray(msg.content))) && (
                   (() => {
@@ -360,7 +360,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     
                     // Otherwise render as plain text
                     return (
-                      <div className="text-sm">
+                      <div className="text-xs">
                         {contentStr}
                       </div>
                     );
@@ -421,10 +421,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       
                       renderedSomething = true;
                       return (
-                        <div key={idx} className="space-y-2">
+                        <div key={idx} className="space-y-1.5">
                           <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Tool Result</span>
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            <span className="text-xs font-medium">Tool Result</span>
                           </div>
                           
                           {beforeReminder && (
@@ -456,10 +456,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     if (isEditResult) {
                       renderedSomething = true;
                       return (
-                        <div key={idx} className="space-y-2">
+                        <div key={idx} className="space-y-1.5">
                           <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Edit Result</span>
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            <span className="text-xs font-medium">Edit Result</span>
                           </div>
                           <EditResultWidget content={contentText} />
                         </div>
@@ -474,10 +474,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     if (isMultiEditResult) {
                       renderedSomething = true;
                       return (
-                        <div key={idx} className="space-y-2">
+                        <div key={idx} className="space-y-1.5">
                           <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">MultiEdit Result</span>
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            <span className="text-xs font-medium">MultiEdit Result</span>
                           </div>
                           <MultiEditResultWidget content={contentText} />
                         </div>
@@ -524,10 +524,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     if (isLSResult) {
                       renderedSomething = true;
                       return (
-                        <div key={idx} className="space-y-2">
+                        <div key={idx} className="space-y-1.5">
                           <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Directory Contents</span>
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            <span className="text-xs font-medium">Directory Contents</span>
                           </div>
                           <LSResultWidget content={contentText} />
                         </div>
@@ -563,10 +563,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       
                       renderedSomething = true;
                       return (
-                        <div key={idx} className="space-y-2">
+                        <div key={idx} className="space-y-1.5">
                           <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Read Result</span>
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            <span className="text-xs font-medium">Read Result</span>
                           </div>
                           <ReadResultWidget content={contentText} filePath={filePath} />
                         </div>
@@ -577,12 +577,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     if (!contentText || contentText.trim() === '') {
                       renderedSomething = true;
                       return (
-                        <div key={idx} className="space-y-2">
+                        <div key={idx} className="space-y-1.5">
                           <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Tool Result</span>
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            <span className="text-xs font-medium">Tool Result</span>
                           </div>
-                          <div className="ml-6 p-3 bg-muted/50 rounded-md border text-sm text-muted-foreground italic">
+                          <div className="ml-6 p-2 bg-muted/50 rounded-md border text-xs text-muted-foreground italic">
                             Tool did not return any output
                           </div>
                         </div>
@@ -591,14 +591,14 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="space-y-2">
+                      <div key={idx} className="space-y-1.5">
                         <div className="flex items-center gap-2">
                           {content.is_error ? (
                             <AlertCircle className="h-4 w-4 text-destructive" />
                           ) : (
                             <CheckCircle2 className="h-4 w-4 text-green-500" />
                           )}
-                          <span className="text-sm font-medium">Tool Result</span>
+                          <span className="text-xs font-medium">Tool Result</span>
                         </div>
                         <div className="ml-6 p-2 bg-background rounded-md border">
                           <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
@@ -618,7 +618,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="text-sm">
+                      <div key={idx} className="text-xs">
                         {textContent}
                       </div>
                     );
@@ -635,81 +635,42 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       return renderedCard;
     }
 
-    // Result message - render with markdown
+    // Result message - render with simple status indicator
     if (message.type === "result") {
       const isError = message.is_error || message.subtype?.includes("error");
       
+      // Show a simple status badge with metadata (no duplicate result text)
       return (
-        <Card className={cn(
-          isError ? "border-destructive/20 bg-destructive/5" : "border-green-500/20 bg-green-500/5",
-          className
-        )}>
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              {isError ? (
-                <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
-              ) : (
-                <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
-              )}
-              <div className="flex-1 space-y-2">
-                <h4 className="font-semibold text-sm">
-                  {isError ? "Execution Failed" : "Execution Complete"}
-                </h4>
-                
-                {message.result && (
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code({ node, inline, className, children, ...props }: any) {
-                          const match = /language-(\w+)/.exec(className || '');
-                          return !inline && match ? (
-                            <SyntaxHighlighter
-                              style={syntaxTheme}
-                              language={match[1]}
-                              PreTag="div"
-                              {...props}
-                            >
-                              {String(children).replace(/\n$/, '')}
-                            </SyntaxHighlighter>
-                          ) : (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          );
-                        }
-                      }}
-                    >
-                      {message.result}
-                    </ReactMarkdown>
-                  </div>
-                )}
-                
-                {message.error && (
-                  <div className="text-sm text-destructive">{message.error}</div>
-                )}
-                
-                <div className="text-xs text-muted-foreground space-y-1 mt-2">
-                  {(message.cost_usd !== undefined || message.total_cost_usd !== undefined) && (
-                    <div>Cost: ${((message.cost_usd || message.total_cost_usd)!).toFixed(4)} USD</div>
-                  )}
-                  {message.duration_ms !== undefined && (
-                    <div>Duration: {(message.duration_ms / 1000).toFixed(2)}s</div>
-                  )}
-                  {message.num_turns !== undefined && (
-                    <div>Turns: {message.num_turns}</div>
-                  )}
-                  {message.usage && (
-                    <div>
-                      Total tokens: {message.usage.input_tokens + message.usage.output_tokens} 
-                      ({message.usage.input_tokens} in, {message.usage.output_tokens} out)
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center justify-end gap-2 px-3 py-1.5">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {isError ? (
+              <>
+                <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                <span className="text-destructive font-medium">Failed</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                <span className="text-green-600 font-medium">Complete</span>
+              </>
+            )}
+            {message.duration_ms !== undefined && (
+              <span className="ml-2">
+                {(message.duration_ms / 1000).toFixed(1)}s
+              </span>
+            )}
+            {(message.cost_usd !== undefined || message.total_cost_usd !== undefined) && (
+              <span className="ml-2">
+                ${((message.cost_usd || message.total_cost_usd)!).toFixed(4)}
+              </span>
+            )}
+            {message.usage && (
+              <span className="ml-2">
+                {message.usage.input_tokens + message.usage.output_tokens} tokens
+              </span>
+            )}
+          </div>
+        </div>
       );
     }
 
@@ -718,13 +679,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
   } catch (error) {
     // If any error occurs during rendering, show a safe error message
     console.error("Error rendering stream message:", error, message);
-    return (
-      <Card className={cn("border-destructive/20 bg-destructive/5", className)}>
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+      return (
+        <Card className={cn("border-destructive/20 bg-destructive/5", className)}>
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-destructive mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium">Error rendering message</p>
+              <p className="text-xs font-medium">Error rendering message</p>
               <p className="text-xs text-muted-foreground mt-1">
                 {error instanceof Error ? error.message : 'Unknown error'}
               </p>

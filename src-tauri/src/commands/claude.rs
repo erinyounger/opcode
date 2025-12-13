@@ -190,6 +190,74 @@ fn decode_project_path(encoded: &str) -> String {
     encoded.replace('-', "/")
 }
 
+/// Checks if a string is a valid UUID format
+fn is_valid_uuid(s: &str) -> bool {
+    // UUID format: 8-4-4-4-12 hex digits
+    // Example: 550e8400-e29b-41d4-a716-446655440000
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 5 {
+        return false;
+    }
+    
+    if parts[0].len() != 8 || parts[1].len() != 4 || parts[2].len() != 4 
+        || parts[3].len() != 4 || parts[4].len() != 12 {
+        return false;
+    }
+    
+    // Check if all parts are valid hex
+    parts.iter().all(|part| part.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// Extracts the Claude session ID from a JSONL file by reading the init message
+fn extract_claude_session_id_from_file(file_session_id: &str) -> Result<String, String> {
+    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    
+    // Try to find the JSONL file - it could be in any project directory
+    let projects_dir = claude_dir.join("projects");
+    
+    if !projects_dir.exists() {
+        return Err(format!("Projects directory not found"));
+    }
+    
+    // Search all project directories for the JSONL file
+    for project_entry in fs::read_dir(&projects_dir).map_err(|e| format!("Failed to read projects dir: {}", e))? {
+        let project_entry = project_entry.map_err(|e| e.to_string())?;
+        let project_path = project_entry.path();
+        
+        if !project_path.is_dir() {
+            continue;
+        }
+        
+        let jsonl_file = project_path.join(format!("{}.jsonl", file_session_id));
+        if jsonl_file.exists() {
+            // Found the file, now extract the real session ID
+            let file = fs::File::open(&jsonl_file)
+                .map_err(|e| format!("Failed to open JSONL file: {}", e))?;
+            let reader = BufReader::new(file);
+            
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                        // Look for system:init message with session_id
+                        if json.get("type").and_then(|v| v.as_str()) == Some("system")
+                            && json.get("subtype").and_then(|v| v.as_str()) == Some("init")
+                        {
+                            if let Some(session_id) = json.get("session_id").and_then(|v| v.as_str()) {
+                                log::info!("Extracted real Claude session ID: {} from file: {}", session_id, file_session_id);
+                                return Ok(session_id.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return Err(format!("No session_id found in init message for file: {}", file_session_id));
+        }
+    }
+    
+    Err(format!("JSONL file not found for session: {}", file_session_id))
+}
+
 /// Extracts the first valid user message from a JSONL file
 fn extract_first_user_message(jsonl_path: &PathBuf) -> (Option<String>, Option<String>) {
     let file = match fs::File::open(jsonl_path) {
@@ -291,16 +359,34 @@ fn create_command_with_env(program: &str) -> Command {
 
 /// Creates a system binary command with the given arguments
 fn create_system_command(claude_path: &str, args: Vec<String>, project_path: &str) -> Command {
+    // On Windows, if the claude path is a .cmd or .bat file, we need to execute it through cmd.exe
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        if claude_path.ends_with(".cmd") || claude_path.ends_with(".bat") {
+            log::info!("Windows: Executing .cmd/.bat file through cmd.exe: {}", claude_path);
+            let mut cmd = create_command_with_env("cmd.exe");
+            cmd.arg("/C");
+            cmd.arg(claude_path);
+            cmd
+        } else {
+            create_command_with_env(claude_path)
+        }
+    };
+
+    #[cfg(not(target_os = "windows"))]
     let mut cmd = create_command_with_env(claude_path);
 
     // Add all arguments
-    for arg in args {
+    log::info!("Claude command arguments: {:?}", args);
+    for arg in &args {
         cmd.arg(arg);
     }
 
     cmd.current_dir(project_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    log::info!("Claude command working directory: {}", project_path);
 
     cmd
 }
@@ -995,11 +1081,25 @@ pub async fn resume_claude_code(
         model
     );
 
+    // Validate if session_id is a valid UUID format
+    // If not (e.g., "agent-123"), try to extract the real Claude session ID from the JSONL file
+    let actual_session_id = if is_valid_uuid(&session_id) {
+        session_id.clone()
+    } else {
+        log::warn!(
+            "Session ID '{}' is not a valid UUID, attempting to extract real session ID from JSONL file",
+            session_id
+        );
+        extract_claude_session_id_from_file(&session_id)?
+    };
+
+    log::info!("Using actual Claude session ID: {}", actual_session_id);
+
     let claude_path = find_claude_binary(&app)?;
 
     let args = vec![
         "--resume".to_string(),
-        session_id.clone(),
+        actual_session_id.clone(),
         "-p".to_string(),
         prompt.clone(),
         "--model".to_string(),
@@ -1214,6 +1314,12 @@ async fn spawn_claude_process(
         *current_process = Some(child);
     }
 
+    // Log command details for debugging
+    log::info!("Claude command details:");
+    log::info!("  - Prompt length: {} chars", prompt.len());
+    log::info!("  - Model: {}", model);
+    log::info!("  - Working directory: {}", project_path);
+
     // Spawn tasks to read stdout and stderr
     let app_handle = app.clone();
     let session_id_holder_clone = session_id_holder.clone();
@@ -1224,8 +1330,12 @@ async fn spawn_claude_process(
     let prompt_clone = prompt.clone();
     let model_clone = model.clone();
     let stdout_task = tokio::spawn(async move {
+        log::info!("📖 Starting to read Claude stdout...");
         let mut lines = stdout_reader.lines();
+        let mut line_count = 0;
         while let Ok(Some(line)) = lines.next_line().await {
+            line_count += 1;
+            log::debug!("Claude stdout[{}]: {}", line_count, line);
             log::debug!("Claude stdout: {}", line);
 
             // Parse the line to check for init message with session ID
@@ -1266,25 +1376,37 @@ async fn spawn_claude_process(
 
             // Emit the line to the frontend with session isolation if we have session ID
             if let Some(ref session_id) = *session_id_holder_clone.lock().unwrap() {
+                log::debug!("Emitting claude-output:{} (line {})", session_id, line_count);
                 let _ = app_handle.emit(&format!("claude-output:{}", session_id), &line);
+            } else {
+                log::debug!("No session ID yet, only emitting generic event (line {})", line_count);
             }
             // Also emit to the generic event for backward compatibility
             let _ = app_handle.emit("claude-output", &line);
         }
+        log::info!("📖 Finished reading Claude stdout. Total lines: {}", line_count);
     });
 
     let app_handle_stderr = app.clone();
     let session_id_holder_clone2 = session_id_holder.clone();
     let stderr_task = tokio::spawn(async move {
+        log::info!("📖 Starting to read Claude stderr...");
         let mut lines = stderr_reader.lines();
+        let mut error_count = 0;
         while let Ok(Some(line)) = lines.next_line().await {
-            log::error!("Claude stderr: {}", line);
+            error_count += 1;
+            log::error!("Claude stderr[{}]: {}", error_count, line);
             // Emit error lines to the frontend with session isolation if we have session ID
             if let Some(ref session_id) = *session_id_holder_clone2.lock().unwrap() {
                 let _ = app_handle_stderr.emit(&format!("claude-error:{}", session_id), &line);
             }
             // Also emit to the generic event for backward compatibility
             let _ = app_handle_stderr.emit("claude-error", &line);
+        }
+        if error_count > 0 {
+            log::warn!("📖 Finished reading Claude stderr. Total error lines: {}", error_count);
+        } else {
+            log::info!("📖 Finished reading Claude stderr. No errors.");
         }
     });
 
