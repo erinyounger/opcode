@@ -55,6 +55,15 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, any>>(new Map());
   
+  // State for code copy functionality
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  
+  // State for image enlargement
+  const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
+  
+  // State for expanded code blocks
+  const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
+  
   // Get current theme
   const { theme } = useTheme();
   const syntaxTheme = getClaudeSyntaxTheme(theme);
@@ -134,19 +143,126 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                           components={{
                             code({ node, inline, className, children, ...props }: any) {
                               const match = /language-(\w+)/.exec(className || '');
-                              return !inline && match ? (
-                                <SyntaxHighlighter
-                                  style={syntaxTheme}
-                                  language={match[1]}
-                                  PreTag="div"
-                                  {...props}
-                                >
-                                  {String(children).replace(/\n$/, '')}
-                                </SyntaxHighlighter>
-                              ) : (
+                              const codeString = String(children).replace(/\n$/, '');
+                              // Use stable ID based on content hash
+                              const codeId = `code-${codeString.substring(0, 50).replace(/\s/g, '').substring(0, 20)}`;
+                              
+                              if (!inline && match) {
+                                // Count lines to determine if code should be collapsible
+                                const lineCount = codeString.split('\n').length;
+                                const isLongCode = lineCount > 15; // More than 15 lines
+                                const isExpanded = expandedCode.has(codeId);
+                                
+                                const toggleExpand = (e: React.MouseEvent) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setExpandedCode(prev => {
+                                    const newSet = new Set(prev);
+                                    if (newSet.has(codeId)) {
+                                      newSet.delete(codeId);
+                                    } else {
+                                      newSet.add(codeId);
+                                    }
+                                    return newSet;
+                                  });
+                                };
+                                
+                                return (
+                                  <div className="relative group">
+                                    <div className="absolute right-2 top-2 flex items-center gap-2 z-10">
+                                      {isLongCode && (
+                                        <button
+                                          onClick={toggleExpand}
+                                          className="opacity-0 group-hover:opacity-100 transition-opacity bg-muted hover:bg-muted/80 text-foreground text-xs px-2 py-1 rounded border border-border"
+                                        >
+                                          {isExpanded ? '收起' : `展开 (${lineCount} 行)`}
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          navigator.clipboard.writeText(codeString);
+                                          setCopiedCode(codeId);
+                                          setTimeout(() => setCopiedCode(null), 2000);
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity bg-muted hover:bg-muted/80 text-foreground text-xs px-2 py-1 rounded border border-border"
+                                      >
+                                        {copiedCode === codeId ? '✓ 已复制' : '复制'}
+                                      </button>
+                                    </div>
+                                    <div 
+                                      className={isLongCode && !isExpanded ? "relative" : ""}
+                                      style={isLongCode && !isExpanded ? {
+                                        maxHeight: '300px',
+                                        overflow: 'hidden'
+                                      } : {}}
+                                    >
+                                      <SyntaxHighlighter
+                                        style={syntaxTheme}
+                                        language={match[1]}
+                                        PreTag="div"
+                                        {...props}
+                                      >
+                                        {codeString}
+                                      </SyntaxHighlighter>
+                                      {isLongCode && !isExpanded && (
+                                        <div 
+                                          className="absolute bottom-0 left-0 right-0 h-20 pointer-events-none"
+                                          style={{
+                                            background: 'linear-gradient(to bottom, transparent, var(--color-card))'
+                                          }}
+                                        />
+                                      )}
+                                    </div>
+                                    {isLongCode && !isExpanded && (
+                                      <div 
+                                        onClick={toggleExpand}
+                                        className="w-full flex items-center justify-center py-1.5 text-xs text-muted-foreground hover:text-foreground border-t border-border bg-card/50 hover:bg-card transition-colors cursor-pointer"
+                                      >
+                                        <span>点击展开完整代码 ({lineCount} 行)</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              
+                              return (
                                 <code className={className} {...props}>
                                   {children}
                                 </code>
+                              );
+                            },
+                            a({ href, children, ...props }: any) {
+                              const isExternal = href?.startsWith('http');
+                              return (
+                                <a
+                                  href={href}
+                                  target={isExternal ? "_blank" : undefined}
+                                  rel={isExternal ? "noopener noreferrer" : undefined}
+                                  className="inline-flex items-center gap-1"
+                                  {...props}
+                                >
+                                  {children}
+                                  {isExternal && (
+                                    <svg className="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                  )}
+                                </a>
+                              );
+                            },
+                            img({ src, alt, ...props }: any) {
+                              return (
+                                <img
+                                  src={src}
+                                  alt={alt}
+                                  loading="lazy"
+                                  className="rounded-lg max-w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
+                                  style={{ maxHeight: '400px' }}
+                                  onClick={() => setEnlargedImage(src)}
+                                  {...props}
+                                />
                               );
                             }
                           }}
@@ -632,7 +748,23 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         </Card>
       );
       if (!renderedSomething) return null;
-      return renderedCard;
+      return (
+        <>
+          {renderedCard}
+          {enlargedImage && (
+            <div 
+              className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+              onClick={() => setEnlargedImage(null)}
+            >
+              <img 
+                src={enlargedImage} 
+                alt="Enlarged view" 
+                className="max-w-full max-h-full object-contain"
+              />
+            </div>
+          )}
+        </>
+      );
     }
 
     // Result message - render with simple status indicator

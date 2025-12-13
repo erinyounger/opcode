@@ -29,7 +29,7 @@ interface TabPanelProps {
 }
 
 const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
-  const { updateTab } = useTabState();
+  const { updateTab, closeTab } = useTabState();
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
   const [sessions, setSessions] = React.useState<Session[]>([]);
@@ -82,7 +82,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   };
 
   const handleOpenProject = async () => {
-    console.log('handleOpenProject called');
+
     try {
       // Use native dialog to pick folder
       const { open } = await import('@tauri-apps/plugin-dialog');
@@ -93,7 +93,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         defaultPath: await api.getHomeDirectory(),
       });
       
-      console.log('Selected folder:', selected);
+
       
       if (selected && typeof selected === 'string') {
         // Create or open project for the selected directory
@@ -265,6 +265,15 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                   title: dirName
                 });
               }}
+              onSessionCreated={(sessionId: string, projectPath: string) => {
+                // Update tab with the newly created session ID
+                const dirName = projectPath.split('/').pop() || projectPath.split('\\').pop() || 'Session';
+                updateTab(tab.id, {
+                  sessionId: sessionId,
+                  title: dirName,
+                  initialProjectPath: projectPath
+                });
+              }}
             />
           </div>
         );
@@ -322,12 +331,36 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         );
       
       case 'claude-file':
-        if (!tab.claudeFileId) {
-          return <div className="p-4">No Claude file ID specified</div>;
+        // Extract project path from the file's absolute path
+        // If relative_path is "CLAUDE.md", the project path is the parent directory of absolute_path
+        if (!tab.claudeFile) {
+          return <div className="p-4">No CLAUDE.md file data specified</div>;
         }
-        // Note: We need to get the actual file object for ClaudeFileEditor
-        // For now, returning a placeholder
-        return <div className="p-4">Claude file editor not yet implemented in tabs</div>;
+        
+        // Extract project path: if absolute_path is "D:\Code\github\opcode\CLAUDE.md"
+        // then project path is "D:\Code\github\opcode"
+        const getProjectPathFromFile = (file: any): string => {
+          if (file.absolute_path) {
+            const pathParts = file.absolute_path.split(/[/\\]/);
+            // Remove the filename (last part) to get the directory
+            pathParts.pop();
+            return pathParts.join(file.absolute_path.includes('\\') ? '\\' : '/');
+          }
+          return '';
+        };
+        
+        const projectPath = getProjectPathFromFile(tab.claudeFile);
+        
+        return (
+          <div className="h-full">
+            <MarkdownEditor 
+              projectPath={projectPath}
+              onBack={() => {
+                closeTab(tab.id);
+              }} 
+            />
+          </div>
+        );
       
       case 'agent-execution':
         if (!tab.agentData) {
@@ -428,7 +461,7 @@ export const TabContent: React.FC = () => {
 
     const handleOpenClaudeFile = (event: CustomEvent) => {
       const { file } = event.detail;
-      createClaudeFileTab(file.id, file.name || 'CLAUDE.md');
+      createClaudeFileTab(file);
     };
 
     const handleOpenAgentExecution = (event: CustomEvent) => {

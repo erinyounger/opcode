@@ -63,7 +63,7 @@ export function useApiCall<T>(
         
         if (showSuccessToast) {
           // TODO: Implement toast notification
-          console.log('Success:', successMessage);
+
         }
 
         onSuccess?.(result);

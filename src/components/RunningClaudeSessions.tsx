@@ -56,11 +56,14 @@ export const RunningClaudeSessions: React.FC<RunningClaudeSessionsProps> = ({
       const sessionId = processInfo.process_type.ClaudeSession.session_id;
       
       // Create a minimal session object for resumption
+      const timestamp = new Date(processInfo.started_at).getTime() / 1000;
       const session: Session = {
         id: sessionId,
         project_id: processInfo.project_path.replace(/[^a-zA-Z0-9]/g, '-'),
         project_path: processInfo.project_path,
-        created_at: new Date(processInfo.started_at).getTime() / 1000,
+        created_at: timestamp,
+        modified_at: timestamp, // Use same timestamp for running sessions
+        last_message_timestamp: processInfo.started_at,
       };
       
       // Emit event to navigate to the session

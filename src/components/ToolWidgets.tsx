@@ -128,7 +128,7 @@ export const LSWidget: React.FC<{ path: string; result?: any }> = ({ path, resul
   const [isExpanded, setIsExpanded] = useState(false);
   
   // Extract result content if available
-  let resultContent = '';
+    let resultContent = '';
   if (result) {
     if (typeof result.content === 'string') {
       resultContent = result.content;
@@ -161,10 +161,10 @@ export const LSWidget: React.FC<{ path: string; result?: any }> = ({ path, resul
           <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
             {title}
           </span>
-          {!result && (
+      {!result && (
             <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-              <span>Loading...</span>
+          <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+          <span>Loading...</span>
             </div>
           )}
         </div>
@@ -363,7 +363,7 @@ export const ReadWidget: React.FC<{ filePath: string; result?: any }> = ({ fileP
   const [isExpanded, setIsExpanded] = useState(false);
   
   // Extract result content if available
-  let resultContent = '';
+    let resultContent = '';
   if (result) {
     if (typeof result.content === 'string') {
       resultContent = result.content;
@@ -396,10 +396,10 @@ export const ReadWidget: React.FC<{ filePath: string; result?: any }> = ({ fileP
           <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
             {title}
           </span>
-          {!result && (
+      {!result && (
             <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-              <span>Loading...</span>
+          <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+          <span>Loading...</span>
             </div>
           )}
         </div>
@@ -633,14 +633,14 @@ export const GlobWidget: React.FC<{ pattern: string; result?: any }> = ({ patter
           <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
             {title}
           </span>
-          {!result && (
+        {!result && (
             <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-              <span>Searching...</span>
-            </div>
-          )}
-        </div>
-        {result && (
+            <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+            <span>Searching...</span>
+          </div>
+        )}
+      </div>
+      {result && (
           <ChevronRight className={cn(
             "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
             isExpanded && "rotate-90"
@@ -650,13 +650,13 @@ export const GlobWidget: React.FC<{ pattern: string; result?: any }> = ({ patter
       
       {isExpanded && result && (
         <div className="px-4 pb-4 pt-2 border-t border-gray-500/20">
-          <div className={cn(
-            "p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
-            isError 
-              ? "border-red-500/20 bg-red-500/5 text-red-400" 
-              : "border-green-500/20 bg-green-500/5 text-green-300"
-          )}>
-            {resultContent || (isError ? "Search failed" : "No matches found")}
+        <div className={cn(
+          "p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
+          isError 
+            ? "border-red-500/20 bg-red-500/5 text-red-400" 
+            : "border-green-500/20 bg-green-500/5 text-green-300"
+        )}>
+          {resultContent || (isError ? "Search failed" : "No matches found")}
           </div>
         </div>
       )}
@@ -710,13 +710,13 @@ export const BashWidget: React.FC<{
           <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
             {title}
           </span>
-          {!result && (
+        {!result && (
             <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-              <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
-              <span>Running...</span>
-            </div>
-          )}
-        </div>
+            <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+            <span>Running...</span>
+          </div>
+        )}
+      </div>
         {result && (
           <ChevronRight className={cn(
             "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
@@ -728,18 +728,18 @@ export const BashWidget: React.FC<{
       {isExpanded && result && (
         <div className="px-4 pb-4 pt-2 border-t border-gray-500/20">
           <div className="space-y-3">
-            <code className="text-xs font-mono text-green-400 block">
-              $ {command}
-            </code>
-            <div className={cn(
+        <code className="text-xs font-mono text-green-400 block">
+          $ {command}
+        </code>
+          <div className={cn(
               "p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
-              isError 
-                ? "border-red-500/20 bg-red-500/5 text-red-400" 
-                : "border-green-500/20 bg-green-500/5 text-green-300"
-            )}>
-              {resultContent || (isError ? "Command failed" : "Command completed")}
-            </div>
+            isError 
+              ? "border-red-500/20 bg-red-500/5 text-red-400" 
+              : "border-green-500/20 bg-green-500/5 text-green-300"
+          )}>
+            {resultContent || (isError ? "Command failed" : "Command completed")}
           </div>
+      </div>
         </div>
       )}
     </div>
@@ -992,18 +992,18 @@ export const GrepWidget: React.FC<{
           <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
             {title}
           </span>
-          {!result && (
+        {!result && (
             <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-              <div className="h-2 w-2 bg-emerald-500 rounded-full animate-pulse" />
-              <span>Searching...</span>
-            </div>
-          )}
+            <div className="h-2 w-2 bg-emerald-500 rounded-full animate-pulse" />
+            <span>Searching...</span>
+          </div>
+        )}
           {result && grepResults.length > 0 && (
             <span className="ml-2 text-xs text-muted-foreground flex-shrink-0">
               ({grepResults.length} matches)
             </span>
           )}
-        </div>
+      </div>
         {result && (
           <ChevronRight className={cn(
             "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
@@ -1014,8 +1014,8 @@ export const GrepWidget: React.FC<{
       
       {isExpanded && result && (
         <div className="px-4 pb-4 pt-2 border-t border-gray-500/20 space-y-2">
-          {/* Search Parameters */}
-          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+      {/* Search Parameters */}
+      <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
         <div className="grid gap-2">
           {/* Pattern with regex highlighting */}
           <div className="flex items-start gap-3">
@@ -1070,10 +1070,10 @@ export const GrepWidget: React.FC<{
             </div>
           )}
         </div>
-          </div>
-          
-          {/* Results */}
-          <div className="space-y-2">
+      </div>
+      
+      {/* Results */}
+        <div className="space-y-2">
           {isError ? (
             <div className="flex items-center gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/20">
               <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
@@ -2369,7 +2369,7 @@ export const ThinkingWidget: React.FC<{
             <Bot className="h-4 w-4 text-gray-500" />
             <Sparkles className="h-2.5 w-2.5 text-gray-400 absolute -top-1 -right-1 animate-pulse" />
           </div>
-          <span className="text-sm font-medium text-gray-600 dark:text-gray-400 italic">
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
             Thinking...
           </span>
         </div>
@@ -2381,7 +2381,7 @@ export const ThinkingWidget: React.FC<{
       
       {isExpanded && (
         <div className="px-4 pb-4 pt-2 border-t border-gray-500/20">
-          <pre className="text-xs font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap bg-gray-500/5 p-3 rounded-lg italic">
+          <pre className="text-xs font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap bg-gray-500/5 p-3 rounded-lg">
             {trimmedThinking}
           </pre>
         </div>

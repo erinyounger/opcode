@@ -51,6 +51,10 @@ export interface Session {
   first_message?: string;
   /** Timestamp of the first user message (if available) */
   message_timestamp?: string;
+  /** Unix timestamp when the session file was last modified */
+  modified_at: number;
+  /** Timestamp of the last message in the session (ISO 8601 format) */
+  last_message_timestamp?: string;
 }
 
 /**
@@ -550,7 +554,7 @@ export const api = {
   async getClaudeSettings(): Promise<ClaudeSettings> {
     try {
       const result = await apiCall<{ data: ClaudeSettings }>("get_claude_settings");
-      console.log("Raw result from get_claude_settings:", result);
+
       
       // The Rust backend returns ClaudeSettings { data: ... }
       // We need to extract the data field
@@ -589,6 +593,18 @@ export const api = {
       return await apiCall<string>("get_system_prompt");
     } catch (error) {
       console.error("Failed to get system prompt:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets the current working directory
+   */
+  async getCurrentWorkingDirectory(): Promise<string> {
+    try {
+      return await apiCall<string>("get_current_working_directory");
+    } catch (error) {
+      console.error("Failed to get current working directory:", error);
       throw error;
     }
   },
@@ -1426,9 +1442,9 @@ export const api = {
    */
   async mcpList(): Promise<MCPServer[]> {
     try {
-      console.log("API: Calling mcp_list...");
+
       const result = await apiCall<MCPServer[]>("mcp_list");
-      console.log("API: mcp_list returned:", result);
+
       return result;
     } catch (error) {
       console.error("API: Failed to list MCP servers:", error);

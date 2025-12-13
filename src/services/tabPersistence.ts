@@ -15,7 +15,7 @@ interface SerializedTab {
   title: string;
   sessionId?: string;
   agentRunId?: string;
-  claudeFileId?: string;
+  claudeFile?: any; // ClaudeMdFile object
   initialProjectPath?: string;
   projectPath?: string;
   status: Tab['status'];
@@ -73,7 +73,7 @@ export class TabPersistenceService {
         title: tab.title,
         sessionId: tab.sessionId,
         agentRunId: tab.agentRunId,
-        claudeFileId: tab.claudeFileId,
+        claudeFile: tab.claudeFile,
         initialProjectPath: tab.initialProjectPath,
         projectPath: tab.projectPath,
         status: tab.status === 'running' ? 'idle' : tab.status, // Reset running status
@@ -143,8 +143,8 @@ export class TabPersistenceService {
             // We'll filter these out as they can't be restored properly
             return false;
           case 'claude-file':
-            // Claude file tabs need a file ID
-            return !!tab.claudeFileId;
+            // Claude file tabs need a file object
+            return !!tab.claudeFile;
           default:
             // Other tab types (projects, agents, usage, etc.) are always valid
             return true;
@@ -191,7 +191,7 @@ export class TabPersistenceService {
         // Attempt to migrate old data
         localStorage.setItem(STORAGE_KEY, oldData);
         localStorage.removeItem(oldKey);
-        console.log('Migrated tab data from old format');
+
       }
     } catch (error) {
       console.error('Failed to migrate old tab data:', error);

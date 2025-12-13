@@ -24,24 +24,17 @@ interface NFOCreditsProps {
 export const NFOCredits: React.FC<NFOCreditsProps> = ({ onClose }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true); // Default to muted (no sound)
   const [scrollPosition, setScrollPosition] = useState(0);
   
-  // Initialize and autoplay audio muted then unmute
+  // Initialize audio but don't autoplay
   useEffect(() => {
     const audio = new Audio(keygennMusic);
     audio.loop = true;
     audio.volume = 0.7;
-    // Start muted to satisfy autoplay policy
-    audio.muted = true;
+    audio.muted = true; // Keep muted by default
     audioRef.current = audio;
-    // Attempt to play
-    audio.play().then(() => {
-      // Unmute after autoplay
-      audio.muted = false;
-    }).catch(err => {
-      console.error("Audio autoplay failed:", err);
-    });
+    // Don't autoplay - user can manually enable sound if needed
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
@@ -51,11 +44,19 @@ export const NFOCredits: React.FC<NFOCreditsProps> = ({ onClose }) => {
     };
   }, []);
   
-  // Handle mute toggle
+  // Handle mute toggle - start playing when unmuted
   const toggleMute = () => {
     if (audioRef.current) {
-      audioRef.current.muted = !isMuted;
-      setIsMuted(!isMuted);
+      const newMutedState = !isMuted;
+      audioRef.current.muted = newMutedState;
+      setIsMuted(newMutedState);
+      
+      // Start playing when unmuting for the first time
+      if (!newMutedState && audioRef.current.paused) {
+        audioRef.current.play().catch(err => {
+          console.error("Audio play failed:", err);
+        });
+      }
     }
   };
   

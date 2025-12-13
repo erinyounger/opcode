@@ -45,8 +45,6 @@ export class ResourceMonitor {
     this.monitoringInterval = setInterval(() => {
       this.collectAndReportMetrics();
     }, intervalMs);
-    
-    console.log(`Resource monitoring started with ${intervalMs}ms interval`);
   }
   
   /**
@@ -58,7 +56,6 @@ export class ResourceMonitor {
       this.monitoringInterval = null;
     }
     this.isMonitoring = false;
-    console.log('Resource monitoring stopped');
   }
   
   /**

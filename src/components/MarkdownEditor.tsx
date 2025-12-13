@@ -13,6 +13,11 @@ interface MarkdownEditorProps {
    */
   onBack: () => void;
   /**
+   * Optional project path - if provided, edits project-specific CLAUDE.md
+   * If not provided, edits the global system prompt (~/.claude/CLAUDE.md)
+   */
+  projectPath?: string;
+  /**
    * Optional className for styling
    */
   className?: string;
@@ -25,6 +30,7 @@ interface MarkdownEditorProps {
  * <MarkdownEditor onBack={() => setView('main')} />
  */
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
+  projectPath,
   className,
 }) => {
   const [content, setContent] = useState<string>("");
@@ -33,24 +39,61 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [claudeMdFilePath, setClaudeMdFilePath] = useState<string | null>(null);
   
   const hasChanges = content !== originalContent;
+  const isProjectMode = !!projectPath;
   
-  // Load the system prompt on mount
+  // Load the system prompt on mount or when projectPath changes
   useEffect(() => {
     loadSystemPrompt();
-  }, []);
+  }, [projectPath]);
   
   const loadSystemPrompt = async () => {
     try {
       setLoading(true);
       setError(null);
-      const prompt = await api.getSystemPrompt();
-      setContent(prompt);
-      setOriginalContent(prompt);
+      
+      if (isProjectMode) {
+        // Find CLAUDE.md in project root directory
+        const files = await api.findClaudeMdFiles(projectPath);
+        const rootClaudeMd = files.find(f => f.relative_path === "CLAUDE.md" || f.relative_path === ".\\CLAUDE.md" || f.relative_path === "./CLAUDE.md");
+        
+        if (rootClaudeMd) {
+          // File exists, load it
+          const fileContent = await api.readClaudeMdFile(rootClaudeMd.absolute_path);
+          setClaudeMdFilePath(rootClaudeMd.absolute_path);
+          setContent(fileContent);
+          setOriginalContent(fileContent);
+        } else {
+          // File doesn't exist, start with empty content and construct path
+          const separator = projectPath.includes('\\') ? '\\' : '/';
+          const newFilePath = `${projectPath}${separator}CLAUDE.md`;
+          setClaudeMdFilePath(newFilePath);
+          setContent("");
+          setOriginalContent("");
+        }
+      } else {
+        // Global mode
+        const prompt = await api.getSystemPrompt();
+        setContent(prompt);
+        setOriginalContent(prompt);
+      }
     } catch (err) {
-      console.error("Failed to load system prompt:", err);
-      setError("Failed to load CLAUDE.md file");
+      console.error("Failed to load CLAUDE.md:", err);
+      // If file doesn't exist, start with empty content (allow creation)
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (errorMessage.includes('not found') || errorMessage.includes('ENOENT') || errorMessage.includes('does not exist')) {
+        console.log("CLAUDE.md file doesn't exist, starting with empty content");
+        if (isProjectMode && projectPath) {
+          const separator = projectPath.includes('\\') ? '\\' : '/';
+          setClaudeMdFilePath(`${projectPath}${separator}CLAUDE.md`);
+        }
+        setContent("");
+        setOriginalContent("");
+      } else {
+        setError(`Failed to load ${isProjectMode ? 'project' : 'global'} CLAUDE.md file`);
+      }
     } finally {
       setLoading(false);
     }
@@ -61,12 +104,21 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       setSaving(true);
       setError(null);
       setToast(null);
-      await api.saveSystemPrompt(content);
+      
+      if (isProjectMode) {
+        if (!claudeMdFilePath) {
+          throw new Error("File path not set");
+        }
+        await api.saveClaudeMdFile(claudeMdFilePath, content);
+      } else {
+        await api.saveSystemPrompt(content);
+      }
+      
       setOriginalContent(content);
       setToast({ message: "CLAUDE.md saved successfully", type: "success" });
     } catch (err) {
-      console.error("Failed to save system prompt:", err);
-      setError("Failed to save CLAUDE.md file");
+      console.error("Failed to save CLAUDE.md:", err);
+      setError(`Failed to save ${isProjectMode ? 'project' : 'global'} CLAUDE.md file`);
       setToast({ message: "Failed to save CLAUDE.md", type: "error" });
     } finally {
       setSaving(false);
@@ -81,9 +133,13 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         <div className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">CLAUDE.md</h1>
+              <h1 className="text-3xl font-bold tracking-tight">
+                {isProjectMode ? 'Project CLAUDE.md' : 'CLAUDE.md'}
+              </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Edit your Claude Code system prompt
+                {isProjectMode 
+                  ? 'Edit your project-specific Claude instructions'
+                  : 'Edit your Claude Code system prompt'}
               </p>
             </div>
             <Button

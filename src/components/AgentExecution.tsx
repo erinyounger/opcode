@@ -290,7 +290,6 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
     try {
       setIsRunning(true);
       // Update tab status to running
-      console.log('Setting tab status to running for tab:', tabId);
       if (tabId) {
         updateTabStatus(tabId, 'running');
       }
@@ -305,7 +304,6 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
       
       // Execute the agent and get the run ID
       const executionRunId = await api.executeAgent(agent.id!, projectPath, task, model);
-      console.log("Agent execution started with run ID:", executionRunId);
       setRunId(executionRunId);
       
       // Track agent execution start
@@ -417,9 +415,7 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
       // Call the API to kill the agent session
       const success = await api.killAgentSession(runId);
 
-      if (success) {
-        console.log(`Successfully stopped agent session ${runId}`);
-      } else {
+      if (!success) {
         console.warn(`Failed to stop agent session ${runId} - it may have already finished`);
       }
 

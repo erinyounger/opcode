@@ -10,7 +10,7 @@ export interface Tab {
   sessionData?: any; // for chat tabs - stores full session object
   agentRunId?: string; // for agent tabs
   agentData?: any; // for agent-execution tabs
-  claudeFileId?: string; // for claude-file tabs
+  claudeFile?: any; // for claude-file tabs - stores full ClaudeMdFile object
   initialProjectPath?: string; // for chat tabs
   projectPath?: string; // for agent-execution tabs
   status: 'active' | 'idle' | 'running' | 'complete' | 'error';

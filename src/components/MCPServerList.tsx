@@ -127,14 +127,14 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   const handleTestConnection = async (name: string) => {
     try {
       setTestingServer(name);
-      const result = await api.mcpTestConnection(name);
+      await api.mcpTestConnection(name);
       const server = servers.find(s => s.name === name);
       
-      // Track connection result - result is a string message
+      // Track connection result
       trackEvent.mcpServerConnected(name, true, server?.transport || 'unknown');
       
       // TODO: Show result in a toast or modal
-      console.log("Test result:", result);
+
     } catch (error) {
       console.error("Failed to test connection:", error);
       

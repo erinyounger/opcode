@@ -168,7 +168,9 @@ export class SessionPersistenceService {
       project_id: data.projectId,
       project_path: data.projectPath,
       created_at: data.timestamp / 1000, // Convert to seconds
-      first_message: "Restored session"
+      first_message: "Restored session",
+      modified_at: data.timestamp / 1000, // Use same timestamp for restored sessions
+      last_message_timestamp: new Date(data.timestamp).toISOString(),
     };
   }
 }

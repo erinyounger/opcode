@@ -31,7 +31,7 @@ try {
     tauriGetCurrentWebviewWindow = require("@tauri-apps/api/webviewWindow").getCurrentWebviewWindow;
   }
 } catch (e) {
-  console.log('[FloatingPromptInput] Tauri webview API not available, using web mode');
+
 }
 
 // Web-compatible replacement
@@ -286,7 +286,7 @@ const FloatingPromptInputInner = (
 
   // Extract image paths from prompt text
   const extractImagePaths = (text: string): string[] => {
-    console.log('[extractImagePaths] Input text length:', text.length);
+
     
     // Updated regex to handle both quoted and unquoted paths
     // Pattern 1: @"path with spaces or data URLs" - quoted paths
@@ -298,11 +298,11 @@ const FloatingPromptInputInner = (
     
     // First, extract quoted paths (including data URLs)
     let matches = Array.from(text.matchAll(quotedRegex));
-    console.log('[extractImagePaths] Quoted matches:', matches.length);
+
     
     for (const match of matches) {
       const path = match[1]; // No need to trim, quotes preserve exact path
-      console.log('[extractImagePaths] Processing quoted path:', path.startsWith('data:') ? 'data URL' : path);
+
       
       // For data URLs, use as-is; for file paths, convert to absolute
       const fullPath = path.startsWith('data:') 
@@ -319,14 +319,14 @@ const FloatingPromptInputInner = (
     
     // Then extract unquoted paths (typically file paths)
     matches = Array.from(textWithoutQuoted.matchAll(unquotedRegex));
-    console.log('[extractImagePaths] Unquoted matches:', matches.length);
+
     
     for (const match of matches) {
       const path = match[1].trim();
       // Skip if it looks like a data URL fragment (shouldn't happen with proper quoting)
       if (path.includes('data:')) continue;
       
-      console.log('[extractImagePaths] Processing unquoted path:', path);
+
       
       // Convert relative path to absolute if needed
       const fullPath = path.startsWith('/') ? path : (projectPath ? `${projectPath}/${path}` : path);
@@ -337,15 +337,15 @@ const FloatingPromptInputInner = (
     }
 
     const uniquePaths = Array.from(pathsSet);
-    console.log('[extractImagePaths] Final extracted paths (unique):', uniquePaths.length);
+
     return uniquePaths;
   };
 
   // Update embedded images when prompt changes
   useEffect(() => {
-    console.log('[useEffect] Prompt changed:', prompt);
+
     const imagePaths = extractImagePaths(prompt);
-    console.log('[useEffect] Setting embeddedImages to:', imagePaths);
+
     setEmbeddedImages(imagePaths);
     
     // Auto-resize on prompt change (handles paste, programmatic changes, etc.)
@@ -467,7 +467,7 @@ const FloatingPromptInputInner = (
         (newCursorPosition > 1 && /\s/.test(newValue[newCursorPosition - 2]));
       
       if (isStartOfCommand) {
-        console.log('[FloatingPromptInput] / detected for slash command');
+
         setShowSlashCommandPicker(true);
         setSlashCommandQuery("");
         setCursorPosition(newCursorPosition);
@@ -476,7 +476,7 @@ const FloatingPromptInputInner = (
 
     // Check if @ was just typed
     if (projectPath?.trim() && newValue.length > prompt.length && newValue[newCursorPosition - 1] === '@') {
-      console.log('[FloatingPromptInput] @ detected, projectPath:', projectPath);
+
       setShowFilePicker(true);
       setFilePickerQuery("");
       setCursorPosition(newCursorPosition);

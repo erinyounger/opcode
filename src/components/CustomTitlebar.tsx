@@ -40,7 +40,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     try {
       const window = getCurrentWindow();
       await window.minimize();
-      console.log('Window minimized successfully');
+
     } catch (error) {
       console.error('Failed to minimize window:', error);
     }
@@ -52,10 +52,10 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       const isMaximized = await window.isMaximized();
       if (isMaximized) {
         await window.unmaximize();
-        console.log('Window unmaximized successfully');
+
       } else {
         await window.maximize();
-        console.log('Window maximized successfully');
+
       }
     } catch (error) {
       console.error('Failed to maximize/unmaximize window:', error);
@@ -66,7 +66,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     try {
       const window = getCurrentWindow();
       await window.close();
-      console.log('Window closed successfully');
+
     } catch (error) {
       console.error('Failed to close window:', error);
     }
