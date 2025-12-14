@@ -208,7 +208,8 @@ export const NFOCredits: React.FC<NFOCreditsProps> = ({ onClose }) => {
                   />
                 </button>
                 <div className="text-muted-foreground text-sm font-mono mt-2 tracking-wider">
-                  A strategic project by Asterisk
+                  A strategic project by Asterisk \n
+                  Magic Modified <a href="https://github.com/winfunc/opcode" target="_blank" rel="noopener noreferrer">Opcode</a> by GuFeiyang 10347281 RAN3
                 </div>
               </div>
               

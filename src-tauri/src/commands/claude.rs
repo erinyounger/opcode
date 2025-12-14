@@ -407,6 +407,13 @@ fn create_command_with_env(program: &str) -> Command {
 
     // Create a new tokio Command from the program path
     let mut tokio_cmd = Command::new(program);
+    
+    // On Windows, prevent opening a new console window
+    #[cfg(target_os = "windows")]
+    {
+        // CREATE_NO_WINDOW = 0x08000000
+        tokio_cmd.creation_flags(0x08000000);
+    }
 
     // Copy over all environment variables
     for (key, value) in std::env::vars() {
@@ -467,7 +474,8 @@ fn create_system_command(claude_path: &str, args: Vec<String>, project_path: &st
         if claude_path.ends_with(".cmd") || claude_path.ends_with(".bat") {
             log::info!("Windows: Executing .cmd/.bat file through cmd.exe: {}", claude_path);
             let mut cmd = create_command_with_env("cmd.exe");
-            cmd.arg("/C");
+            cmd.arg("/Q"); // Quiet mode - don't echo commands
+            cmd.arg("/C"); // Execute command and terminate
             cmd.arg(claude_path);
             cmd
         } else {
@@ -487,6 +495,13 @@ fn create_system_command(claude_path: &str, args: Vec<String>, project_path: &st
     cmd.current_dir(project_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    
+    // On Windows, ensure CREATE_NO_WINDOW flag is set to prevent opening cmd window
+    #[cfg(target_os = "windows")]
+    {
+        // CREATE_NO_WINDOW = 0x08000000
+        cmd.creation_flags(0x08000000);
+    }
 
     log::info!("Claude command working directory: {}", project_path);
 
@@ -911,8 +926,8 @@ pub async fn check_claude_version(app: AppHandle) -> Result<ClaudeVersionStatus,
 
         match output {
             Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                let stdout = crate::claude_binary::decode_command_output(&output.stdout);
+                let stderr = crate::claude_binary::decode_command_output(&output.stderr);
 
                 // Use regex to directly extract version pattern (e.g., "1.0.41")
                 let version_regex =
@@ -1348,7 +1363,7 @@ pub async fn cancel_claude_execution(
                                 killed = true;
                             }
                             Ok(output) => {
-                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                let stderr = crate::claude_binary::decode_command_output(&output.stderr);
                                 log::error!("System kill failed: {}", stderr);
                             }
                             Err(e) => {
@@ -2541,7 +2556,7 @@ pub async fn validate_hook_command(command: String) -> Result<serde_json::Value,
                     "message": "Command syntax is valid"
                 }))
             } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stderr = crate::claude_binary::decode_command_output(&output.stderr);
                 Ok(serde_json::json!({
                     "valid": false,
                     "message": format!("Syntax error: {}", stderr)

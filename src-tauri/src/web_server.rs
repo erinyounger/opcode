@@ -485,6 +485,15 @@ async fn execute_claude_command(
     // Create Claude command
     println!("[TRACE] Creating Claude command...");
     let mut cmd = Command::new(&claude_path);
+    
+    // On Windows, prevent opening a new console window
+    #[cfg(target_os = "windows")]
+    {
+        // CREATE_NO_WINDOW = 0x08000000
+        // tokio::process::Command has creation_flags as a direct method, no trait needed
+        cmd.creation_flags(0x08000000);
+    }
+    
     let args = [
         "-p",
         &prompt,
@@ -597,6 +606,15 @@ async fn continue_claude_command(
 
     // Create continue command
     let mut cmd = Command::new(&claude_path);
+    
+    // On Windows, prevent opening a new console window
+    #[cfg(target_os = "windows")]
+    {
+        // CREATE_NO_WINDOW = 0x08000000
+        // tokio::process::Command has creation_flags as a direct method, no trait needed
+        cmd.creation_flags(0x08000000);
+    }
+    
     cmd.args([
         "-c", // Continue flag
         "-p",
@@ -684,6 +702,15 @@ async fn resume_claude_command(
     // Create resume command
     println!("[resume_claude_command] Creating command...");
     let mut cmd = Command::new(&claude_path);
+    
+    // On Windows, prevent opening a new console window
+    #[cfg(target_os = "windows")]
+    {
+        // CREATE_NO_WINDOW = 0x08000000
+        // tokio::process::Command has creation_flags as a direct method, no trait needed
+        cmd.creation_flags(0x08000000);
+    }
+    
     let args = [
         "--resume",
         &claude_session_id,

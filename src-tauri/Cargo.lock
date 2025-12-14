@@ -3558,6 +3558,7 @@ dependencies = [
  "clap",
  "cocoa",
  "dirs 5.0.1",
+ "encoding_rs",
  "env_logger",
  "futures",
  "futures-util",

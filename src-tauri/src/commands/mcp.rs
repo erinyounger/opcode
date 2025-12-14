@@ -111,9 +111,9 @@ fn execute_claude_mcp_command(app_handle: &AppHandle, args: Vec<&str>) -> Result
     let output = cmd.output().context("Failed to execute claude command")?;
 
     if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(crate::claude_binary::decode_command_output(&output.stdout))
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::claude_binary::decode_command_output(&output.stderr);
         Err(anyhow::anyhow!("Command failed: {}", stderr))
     }
 }

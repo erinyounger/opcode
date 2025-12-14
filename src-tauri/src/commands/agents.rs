@@ -798,7 +798,8 @@ fn create_agent_system_command(
         if claude_path.ends_with(".cmd") || claude_path.ends_with(".bat") {
             info!("Windows: Executing .cmd/.bat file through cmd.exe: {}", claude_path);
             let mut cmd = create_command_with_env("cmd.exe");
-            cmd.arg("/C");
+            cmd.arg("/Q"); // Quiet mode - don't echo commands
+            cmd.arg("/C"); // Execute command and terminate
             cmd.arg(claude_path);
             cmd
         } else {
@@ -819,6 +820,13 @@ fn create_agent_system_command(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    
+    // On Windows, ensure CREATE_NO_WINDOW flag is set to prevent opening cmd window
+    #[cfg(target_os = "windows")]
+    {
+        // CREATE_NO_WINDOW = 0x08000000
+        cmd.creation_flags(0x08000000);
+    }
 
     info!("Agent command working directory: {}", project_path);
 
@@ -1321,7 +1329,7 @@ pub async fn cleanup_finished_processes(db: State<'_, AgentDb>) -> Result<Vec<i6
                 .output()
             {
                 Ok(output) => {
-                    let output_str = String::from_utf8_lossy(&output.stdout);
+                    let output_str = crate::claude_binary::decode_command_output(&output.stdout);
                     output_str.lines().count() > 1 // Header + process line if exists
                 }
                 Err(_) => false,
@@ -1669,6 +1677,13 @@ fn create_command_with_env(program: &str) -> Command {
 
     // Create a new tokio Command from the program path
     let mut tokio_cmd = Command::new(program);
+    
+    // On Windows, prevent opening a new console window
+    #[cfg(target_os = "windows")]
+    {
+        // CREATE_NO_WINDOW = 0x08000000
+        tokio_cmd.creation_flags(0x08000000);
+    }
 
     // Copy over all environment variables from the std::process::Command
     // This is a workaround since we can't directly convert between the two types

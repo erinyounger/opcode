@@ -10,6 +10,31 @@ use std::path::PathBuf;
 use std::process::Command;
 use tauri::Manager;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+/// Converts command output bytes to UTF-8 string, handling Windows encoding issues
+/// On Windows, cmd.exe outputs GBK/GB2312 encoding by default, which needs conversion
+pub fn decode_command_output(bytes: &[u8]) -> String {
+    // First try UTF-8 (most common case)
+    if let Ok(utf8_str) = std::str::from_utf8(bytes) {
+        return utf8_str.to_string();
+    }
+    
+    // On Windows, try GBK encoding (Chinese Windows default)
+    #[cfg(target_os = "windows")]
+    {
+        use encoding_rs::GBK;
+        let (decoded, _, had_errors) = GBK.decode(bytes);
+        if !had_errors {
+            return decoded.to_string();
+        }
+    }
+    
+    // Fallback to lossy UTF-8 conversion
+    String::from_utf8_lossy(bytes).to_string()
+}
+
 /// Type of Claude installation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum InstallationType {
@@ -174,7 +199,7 @@ fn try_which_command() -> Option<ClaudeInstallation> {
 
     match Command::new("which").arg("claude").output() {
         Ok(output) if output.status.success() => {
-            let output_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let output_str = decode_command_output(&output.stdout).trim().to_string();
 
             if output_str.is_empty() {
                 return None;
@@ -218,7 +243,7 @@ fn try_which_command() -> Option<ClaudeInstallation> {
 
     match Command::new("where").arg("claude").output() {
         Ok(output) if output.status.success() => {
-            let output_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let output_str = decode_command_output(&output.stdout).trim().to_string();
 
             if output_str.is_empty() {
                 return None;
@@ -519,7 +544,7 @@ fn get_claude_version(path: &str) -> Result<Option<String>, String> {
 
 /// Extract version string from command output
 fn extract_version_from_output(stdout: &[u8]) -> Option<String> {
-    let output_str = String::from_utf8_lossy(stdout);
+    let output_str = decode_command_output(stdout);
 
     // Debug log the raw output
     debug!("Raw version output: {:?}", output_str);
@@ -622,6 +647,13 @@ fn compare_versions(a: &str, b: &str) -> Ordering {
 /// This ensures commands like Claude can find Node.js and other dependencies
 pub fn create_command_with_env(program: &str) -> Command {
     let mut cmd = Command::new(program);
+    
+    // On Windows, prevent opening a new console window
+    #[cfg(target_os = "windows")]
+    {
+        // CREATE_NO_WINDOW = 0x08000000
+        cmd.creation_flags(0x08000000);
+    }
 
     info!("Creating command for: {}", program);
 

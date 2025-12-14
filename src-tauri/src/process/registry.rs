@@ -423,7 +423,7 @@ impl ProcessRegistry {
                     self.unregister_process(run_id)?;
                     Ok(true)
                 } else {
-                    let error_msg = String::from_utf8_lossy(&output.stderr);
+                    let error_msg = crate::claude_binary::decode_command_output(&output.stderr);
                     warn!("Failed to kill PID {}: {}", pid, error_msg);
                     Ok(false)
                 }
