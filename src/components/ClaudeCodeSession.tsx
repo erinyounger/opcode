@@ -8,7 +8,8 @@ import {
   X,
   Hash,
   Wrench,
-  FolderOpen
+  FolderOpen,
+  ArrowLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +81,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   session,
   initialProjectPath = "",
   className,
+  onBack,
   onStreamingChange,
   onProjectPathChange,
   onSessionCreated,
@@ -1305,6 +1307,27 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
         <div className="w-full h-full flex flex-col">
+        {/* Header with Back Button */}
+        <div className="flex items-center gap-3 px-6 py-3 border-b border-border sticky top-0 z-40 bg-background/95 backdrop-blur-sm">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onBack}
+            className="h-8 w-8"
+            title="返回"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex items-center gap-2">
+            <Hash className="h-5 w-5 text-primary" />
+            <span className="font-semibold">Claude Code Session</span>
+            {claudeSessionId && (
+              <span className="text-xs text-muted-foreground">
+                {claudeSessionId.slice(0, 8)}
+              </span>
+            )}
+          </div>
+        </div>
 
         {/* Main Content Area */}
         <div className={cn(

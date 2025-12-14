@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;

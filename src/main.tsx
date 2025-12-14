@@ -45,9 +45,9 @@ resourceMonitor.startMonitoring(120000);
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <PostHogProvider
-      apiKey={import.meta.env.VITE_PUBLIC_POSTHOG_KEY}
+      apiKey={import.meta.env.VITE_PUBLIC_POSTHOG_KEY || 'phc_6seRe1SJkFckJU2qQWeeIy62kaSoaUbCsdVCm1TQZg8'}
       options={{
-        api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
+        api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
         defaults: '2025-05-24',
         capture_exceptions: true,
         debug: import.meta.env.MODE === "development",

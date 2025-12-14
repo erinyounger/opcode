@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use super::agents::AgentDb;
 use anyhow::Result;
 use rusqlite::{params, types::ValueRef, Connection, Result as SqliteResult};

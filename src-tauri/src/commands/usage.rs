@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use chrono::{DateTime, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json;
