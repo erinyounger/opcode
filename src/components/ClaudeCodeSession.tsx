@@ -1320,9 +1320,59 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           </Button>
           <div className="flex items-center gap-2">
             <Hash className="h-5 w-5 text-primary" />
-            <span className="font-semibold">Claude Code Session</span>
+            <span className="font-semibold">
+              {(() => {
+                // Generate session name from first user message
+                // Priority: messages array > session.first_message > timestamp > project path
+                
+                // Try to get first user message from messages array
+                const firstUserMessage = messages.find(m => m.role === 'user' && m.content);
+                if (firstUserMessage?.content) {
+                  const content = typeof firstUserMessage.content === 'string' 
+                    ? firstUserMessage.content 
+                    : Array.isArray(firstUserMessage.content)
+                      ? firstUserMessage.content.find((c: any) => c.type === 'text')?.text || ''
+                      : '';
+                  const message = content.trim();
+                  if (message) {
+                    return message.length > 30 ? `${message.substring(0, 27)}...` : message;
+                  }
+                }
+                
+                // Fallback to session.first_message
+                if (session?.first_message) {
+                  const message = session.first_message.trim();
+                  if (message) {
+                    return message.length > 30 ? `${message.substring(0, 27)}...` : message;
+                  }
+                }
+                
+                // Use timestamp to create a readable session name
+                if (session?.message_timestamp || session?.last_message_timestamp) {
+                  const timestamp = session.message_timestamp || session.last_message_timestamp;
+                  if (timestamp) {
+                    const date = new Date(timestamp);
+                    const dateStr = date.toLocaleDateString('zh-CN', { 
+                      month: '2-digit', 
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    });
+                    return `Session ${dateStr}`;
+                  }
+                }
+                
+                // Fallback to project path (like tab title)
+                if (projectPath) {
+                  const parts = projectPath.split(/[/\\]/).filter(Boolean);
+                  return parts[parts.length - 1] || projectPath;
+                }
+                
+                return "Claude Code Session";
+              })()}
+            </span>
             {claudeSessionId && (
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground font-mono">
                 {claudeSessionId.slice(0, 8)}
               </span>
             )}

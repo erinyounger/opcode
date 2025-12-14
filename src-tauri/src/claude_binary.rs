@@ -35,6 +35,43 @@ pub fn decode_command_output(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).to_string()
 }
 
+/// Async helper function to read and decode a line with proper encoding handling
+/// This is used for streaming command output where encoding conversion is needed
+pub async fn read_decoded_line<R: tokio::io::AsyncReadExt + Unpin>(
+    reader: &mut tokio::io::BufReader<R>,
+) -> tokio::io::Result<Option<String>> {
+    use tokio::io::AsyncReadExt;
+    let mut buffer = Vec::new();
+    loop {
+        let byte = match reader.read_u8().await {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                if buffer.is_empty() {
+                    return Ok(None);
+                }
+                break;
+            }
+            Err(e) => return Err(e),
+        };
+        
+        if byte == b'\n' {
+            break;
+        }
+        
+        if byte != b'\r' {
+            buffer.push(byte);
+        }
+    }
+    
+    if buffer.is_empty() {
+        return Ok(Some(String::new()));
+    }
+    
+    // Decode using the same logic as decode_command_output
+    let decoded = decode_command_output(&buffer);
+    Ok(Some(decoded))
+}
+
 /// Type of Claude installation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum InstallationType {

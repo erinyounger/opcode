@@ -13,7 +13,7 @@ use std::process::Stdio;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 // Sidecar support removed; using system binary execution only
-use tokio::io::{AsyncBufReadExt, BufReader as TokioBufReader};
+use tokio::io::BufReader as TokioBufReader;
 use tokio::process::Command;
 
 /// Finds the full path to the claude binary
@@ -906,10 +906,10 @@ async fn spawn_agent_system(
 
     let stdout_task = tokio::spawn(async move {
         info!("📖 Starting to read Claude stdout...");
-        let mut lines = stdout_reader.lines();
+        let mut reader = stdout_reader;
         let mut line_count = 0;
 
-        while let Ok(Some(line)) = lines.next_line().await {
+        while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut reader).await {
             line_count += 1;
 
             // Log first output
@@ -991,10 +991,10 @@ async fn spawn_agent_system(
 
     let stderr_task = tokio::spawn(async move {
         info!("📖 Starting to read Claude stderr...");
-        let mut lines = stderr_reader.lines();
+        let mut reader = stderr_reader;
         let mut error_count = 0;
 
-        while let Ok(Some(line)) = lines.next_line().await {
+        while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut reader).await {
             error_count += 1;
 
             // Log first error

@@ -159,6 +159,8 @@ pub struct FileEntry {
     pub size: u64,
     /// File extension (if applicable)
     pub extension: Option<String>,
+    /// Last modified time as Unix timestamp (None if unavailable)
+    pub modified_time: Option<u64>,
 }
 
 /// Finds the full path to the claude binary
@@ -1435,7 +1437,7 @@ async fn spawn_claude_process(
     project_path: String,
 ) -> Result<(), String> {
     use std::sync::Mutex;
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::{BufReader};
 
     // Spawn the process
     let mut child = cmd
@@ -1487,9 +1489,9 @@ async fn spawn_claude_process(
     let model_clone = model.clone();
     let stdout_task = tokio::spawn(async move {
         log::info!("📖 Starting to read Claude stdout...");
-        let mut lines = stdout_reader.lines();
+        let mut reader = stdout_reader;
         let mut line_count = 0;
-        while let Ok(Some(line)) = lines.next_line().await {
+        while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut reader).await {
             line_count += 1;
             log::debug!("Claude stdout[{}]: {}", line_count, line);
             log::debug!("Claude stdout: {}", line);
@@ -1547,9 +1549,9 @@ async fn spawn_claude_process(
     let session_id_holder_clone2 = session_id_holder.clone();
     let stderr_task = tokio::spawn(async move {
         log::info!("📖 Starting to read Claude stderr...");
-        let mut lines = stderr_reader.lines();
+        let mut reader = stderr_reader;
         let mut error_count = 0;
-        while let Ok(Some(line)) = lines.next_line().await {
+        while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut reader).await {
             error_count += 1;
             log::error!("Claude stderr[{}]: {}", error_count, line);
             // Emit error lines to the frontend with session isolation if we have session ID
@@ -1675,12 +1677,23 @@ pub async fn list_directory_contents(directory_path: String) -> Result<Vec<FileE
             None
         };
 
+        // Get modified time
+        let modified_time = metadata
+            .modified()
+            .ok()
+            .and_then(|time| {
+                time.duration_since(UNIX_EPOCH)
+                    .ok()
+                    .map(|duration| duration.as_secs())
+            });
+
         entries.push(FileEntry {
             name,
             path: entry_path.to_string_lossy().to_string(),
             is_directory: metadata.is_dir(),
             size: metadata.len(),
             extension,
+            modified_time,
         });
     }
 
@@ -1766,12 +1779,23 @@ pub async fn list_project_files(project_path: String) -> Result<Vec<FileEntry>, 
                 .to_string_lossy()
                 .replace('\\', "/");
             
+            // Get modified time
+            let modified_time = metadata
+                .modified()
+                .ok()
+                .and_then(|time| {
+                    time.duration_since(UNIX_EPOCH)
+                        .ok()
+                        .map(|duration| duration.as_secs())
+                });
+            
             entries.push(FileEntry {
                 name,
                 path: normalized_path,
                 is_directory: metadata.is_dir(),
                 size: metadata.len(),
                 extension,
+                modified_time,
             });
 
             // Recursively process subdirectories
@@ -1883,12 +1907,23 @@ fn search_files_recursive(
                     None
                 };
 
+                // Get modified time
+                let modified_time = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|time| {
+                        time.duration_since(UNIX_EPOCH)
+                            .ok()
+                            .map(|duration| duration.as_secs())
+                    });
+                
                 results.push(FileEntry {
                     name: name.to_string(),
                     path: entry_path.to_string_lossy().to_string(),
                     is_directory: metadata.is_dir(),
                     size: metadata.len(),
                     extension,
+                    modified_time,
                 });
             }
         }

@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { api, type FileEntry } from "@/lib/api";
 import { open } from "@tauri-apps/plugin-shell";
+import { formatDistanceToNow } from "date-fns";
 
 interface FileBrowserProps {
   projectPath: string;
@@ -39,6 +40,9 @@ interface FileTypeFilter {
   icon: React.ReactNode;
   extensions: string[];
 }
+
+// Text file extensions that can be opened with system editor
+const TEXT_FILE_EXTENSIONS = ['txt', 'md', 'log', 'json', 'yaml', 'yml', 'xml', 'csv', 'ini', 'conf', 'toml', 'cfg', 'env', 'properties', 'sh', 'bat', 'cmd', 'ps1', 'bash', 'zsh'];
 
 const FILE_TYPE_FILTERS: FileTypeFilter[] = [
   {
@@ -300,15 +304,18 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   };
 
   const handleFileClick = async (file: FileEntry) => {
-    // Only handle HTML files - open in system browser
-    if (file.extension?.toLowerCase() === "html" || file.extension?.toLowerCase() === "htm") {
-      // Validate file path
-      if (!file.path || file.path.trim() === '') {
-        setError("Invalid file path");
-        return;
-      }
+    if (!file.path || file.path.trim() === '') {
+      setError("Invalid file path");
+      return;
+    }
 
-      try {
+    const ext = file.extension?.toLowerCase() || '';
+    const isHtml = ext === "html" || ext === "htm";
+    const isTextFile = ext && TEXT_FILE_EXTENSIONS.includes(ext);
+
+    try {
+      if (isHtml) {
+        // Handle HTML files - open in system browser via HTTP server
         // Ensure server is running
         let url = serverUrl;
         if (!url) {
@@ -341,20 +348,21 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
         
         const previewUrl = `${url}/${encodedPath}`;
         
-        console.log('Opening HTML file:', {
-          originalPath: file.path,
-          normalizedPath,
-          encodedPath,
-          previewUrl,
-          fileName: file.name
-        });
-        
         // Open in system browser (Chrome, etc.)
         await open(previewUrl);
-      } catch (err) {
-        console.error("Failed to start file server or open URL:", err);
-        setError(`Failed to open file in browser: ${err instanceof Error ? err.message : String(err)}`);
+      } else if (isTextFile) {
+        // Handle text files - open with system default text editor
+        // Build absolute path
+        const normalizedProjectPath = projectPath.replace(/\\/g, '/').replace(/\/$/, '');
+        const normalizedFilePath = file.path.replace(/\\/g, '/').replace(/^\//, '');
+        const absolutePath = `${normalizedProjectPath}/${normalizedFilePath}`.replace(/\/+/g, '/');
+        
+        // Open file with system default editor
+        await open(absolutePath);
       }
+    } catch (err) {
+      console.error("Failed to open file:", err);
+      setError(`Failed to open file: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -375,13 +383,19 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
         {children.map((child) => {
           const isExpanded = expandedPaths.has(child.entry.path);
           const hasChildren = child.children.size > 0;
-          const isHtml = child.entry.extension?.toLowerCase() === "html" ||
-                        child.entry.extension?.toLowerCase() === "htm";
+          const ext = child.entry.extension?.toLowerCase() || '';
+          const isHtml = ext === "html" || ext === "htm";
+          const isTextFile = ext && TEXT_FILE_EXTENSIONS.includes(ext);
+          
+          // Format modified time if available
+          const modifiedTimeDisplay = child.entry.modified_time
+            ? formatDistanceToNow(new Date(child.entry.modified_time * 1000), { addSuffix: true })
+            : null;
 
           return (
             <div key={child.entry.path}>
               <div
-                className="flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/50 transition-colors"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/50 transition-colors group"
                 style={{ paddingLeft: `${level * 16 + 8}px` }}
               >
                 {child.entry.is_directory ? (
@@ -407,16 +421,15 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                     <div className="w-4" /> {/* Spacer for alignment */}
                     {isHtml ? (
                       <FileCode className="h-4 w-4 text-orange-500" />
+                    ) : isTextFile ? (
+                      <FileText className="h-4 w-4 text-blue-500" />
                     ) : (
                       <File className="h-4 w-4 text-muted-foreground" />
                     )}
                   </>
                 )}
-                <span
-                  className={cn(
-                    "flex-1 text-sm truncate",
-                    isHtml && "font-medium text-orange-600 dark:text-orange-400"
-                  )}
+                <div
+                  className="flex-1 min-w-0 flex flex-col"
                   onClick={() => {
                     if (!child.entry.is_directory) {
                       handleFileClick(child.entry);
@@ -425,18 +438,31 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                     }
                   }}
                 >
-                  {child.entry.name}
-                </span>
-                {isHtml && (
+                  <span
+                    className={cn(
+                      "text-sm truncate",
+                      isHtml && "font-medium text-orange-600 dark:text-orange-400",
+                      isTextFile && "text-blue-600 dark:text-blue-400"
+                    )}
+                  >
+                    {child.entry.name}
+                  </span>
+                  {!child.entry.is_directory && modifiedTimeDisplay && (
+                    <span className="text-xs text-muted-foreground truncate">
+                      {modifiedTimeDisplay}
+                    </span>
+                  )}
+                </div>
+                {(isHtml || isTextFile) && (
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6"
+                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleFileClick(child.entry);
                     }}
-                    title="Preview HTML file"
+                    title={isHtml ? "Open in browser" : "Open in editor"}
                   >
                     <ExternalLink className="h-3 w-3" />
                   </Button>

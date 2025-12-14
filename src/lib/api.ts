@@ -99,6 +99,7 @@ export interface FileEntry {
   is_directory: boolean;
   size: number;
   extension?: string;
+  modified_time?: number;
 }
 
 /**

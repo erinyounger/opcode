@@ -451,7 +451,7 @@ async fn execute_claude_command(
     session_id: String,
     state: AppState,
 ) -> Result<(), String> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::BufReader;
     use tokio::process::Command;
 
     println!("[TRACE] execute_claude_command called:");
@@ -528,13 +528,12 @@ async fn execute_claude_command(
         println!("[TRACE] Failed to get stdout from child process");
         "Failed to get stdout".to_string()
     })?;
-    let stdout_reader = BufReader::new(stdout);
+    let mut stdout_reader = BufReader::new(stdout);
 
     println!("[TRACE] Starting to read Claude output...");
-    // Stream output line by line
-    let mut lines = stdout_reader.lines();
+    // Stream output line by line with proper encoding handling
     let mut line_count = 0;
-    while let Ok(Some(line)) = lines.next_line().await {
+    while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut stdout_reader).await {
         line_count += 1;
         println!("[TRACE] Claude output line {}: {}", line_count, line);
 
@@ -586,7 +585,7 @@ async fn continue_claude_command(
     session_id: String,
     state: AppState,
 ) -> Result<(), String> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::BufReader;
     use tokio::process::Command;
 
     send_to_session(
@@ -635,10 +634,9 @@ async fn continue_claude_command(
         .spawn()
         .map_err(|e| format!("Failed to spawn Claude: {}", e))?;
     let stdout = child.stdout.take().ok_or("Failed to get stdout")?;
-    let stdout_reader = BufReader::new(stdout);
+    let mut stdout_reader = BufReader::new(stdout);
 
-    let mut lines = stdout_reader.lines();
-    while let Ok(Some(line)) = lines.next_line().await {
+    while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut stdout_reader).await {
         send_to_session(
             &state,
             &session_id,
@@ -673,7 +671,7 @@ async fn resume_claude_command(
     session_id: String,
     state: AppState,
 ) -> Result<(), String> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::BufReader;
     use tokio::process::Command;
 
     println!("[resume_claude_command] Starting with project_path: {}, claude_session_id: {}, prompt: {}, model: {}", 
@@ -742,10 +740,9 @@ async fn resume_claude_command(
     })?;
     println!("[resume_claude_command] Process spawned successfully");
     let stdout = child.stdout.take().ok_or("Failed to get stdout")?;
-    let stdout_reader = BufReader::new(stdout);
+    let mut stdout_reader = BufReader::new(stdout);
 
-    let mut lines = stdout_reader.lines();
-    while let Ok(Some(line)) = lines.next_line().await {
+    while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut stdout_reader).await {
         send_to_session(
             &state,
             &session_id,

@@ -24,6 +24,7 @@ interface SessionHeaderProps {
   hasMessages: boolean;
   showTimeline: boolean;
   copyPopoverOpen: boolean;
+  sessionName?: string; // Optional session name to display
   onBack: () => void;
   onSelectPath: () => void;
   onCopyAsJsonl: () => void;
@@ -42,6 +43,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   hasMessages,
   showTimeline,
   copyPopoverOpen,
+  sessionName,
   onBack,
   onSelectPath,
   onCopyAsJsonl,
@@ -58,19 +60,28 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
       className="bg-background/95 backdrop-blur-sm border-b px-4 py-3 sticky top-0 z-40"
     >
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1 pr-4">
           <Button
             variant="ghost"
             size="icon"
             onClick={onBack}
-            className="h-8 w-8"
+            className="h-8 w-8 flex-shrink-0"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           
-          <div className="flex items-center gap-2">
-            <Terminal className="h-5 w-5 text-primary" />
-            <span className="font-semibold">Claude Code Session</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <Terminal className="h-5 w-5 text-primary flex-shrink-0" />
+            <span className="font-semibold truncate">
+              {sessionName || (projectPath 
+                ? (() => {
+                    const parts = projectPath.split(/[/\\]/).filter(Boolean);
+                    const projectName = parts[parts.length - 1] || projectPath;
+                    return projectName.length > 30 ? `${projectName.substring(0, 27)}...` : projectName;
+                  })()
+                : "Claude Code Session")
+              }
+            </span>
           </div>
 
           
@@ -79,7 +90,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
               variant="outline"
               size="sm"
               onClick={onSelectPath}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 flex-shrink-0"
             >
               <FolderOpen className="h-4 w-4" />
               Select Project
@@ -87,7 +98,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {claudeSessionId && (
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-xs">
