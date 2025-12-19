@@ -16,6 +16,42 @@ fn create_command_with_env(program: &str) -> Command {
     crate::claude_binary::create_command_with_env(program)
 }
 
+/// Cleans up command string by removing status indicators from claude mcp list output
+/// Examples of patterns to remove:
+/// - "- ✓ Connected"
+/// - "- ✗ Failed to connect"
+/// - "- ✓ connected"
+/// - "- ✗ failed"
+fn clean_command_string(command: &str) -> String {
+    // Pattern: " - ✓ ..." or " - ✗ ..." at the end
+    let patterns = [
+        " - ✓ Connected",
+        " - ✗ Failed to connect",
+        " - ✓ connected",
+        " - ✗ failed",
+        " - ✓",
+        " - ✗",
+    ];
+
+    let mut result = command.to_string();
+    for pattern in patterns {
+        if let Some(pos) = result.find(pattern) {
+            result = result[..pos].trim().to_string();
+            break;
+        }
+    }
+
+    // Also handle case-insensitive and variations
+    // Look for pattern: " - " followed by checkmark or X symbol
+    if let Some(pos) = result.find(" - ✓") {
+        result = result[..pos].trim().to_string();
+    } else if let Some(pos) = result.find(" - ✗") {
+        result = result[..pos].trim().to_string();
+    }
+
+    result
+}
+
 /// Finds the full path to the claude binary
 /// This is necessary because macOS apps have a limited PATH environment
 fn find_claude_binary(app_handle: &AppHandle) -> Result<String> {
@@ -54,6 +90,17 @@ pub struct ServerStatus {
     pub error: Option<String>,
     /// Last checked timestamp
     pub last_checked: Option<u64>,
+}
+
+/// MCP configuration file paths
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MCPConfigPaths {
+    /// Local config path (project-specific, private)
+    pub local: String,
+    /// Project config path (.mcp.json, shared)
+    pub project: String,
+    /// User config path (global)
+    pub user: String,
 }
 
 /// MCP configuration for project scope (.mcp.json)
@@ -287,11 +334,15 @@ pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
                         let full_command = command_parts.join(" ");
                         info!("Full command for server '{}': {:?}", name, full_command);
 
+                        // Clean up the command - remove status indicators like "- ✓ Connected" or "- ✗ Failed to connect"
+                        let cleaned_command = clean_command_string(&full_command);
+                        info!("Cleaned command for server '{}': {:?}", name, cleaned_command);
+
                         // For now, we'll create a basic server entry
                         servers.push(MCPServer {
                             name: name.clone(),
                             transport: "stdio".to_string(), // Default assumption
-                            command: Some(full_command),
+                            command: Some(cleaned_command),
                             args: vec![],
                             env: HashMap::new(),
                             url: None,
@@ -346,6 +397,8 @@ pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> 
             let mut args = vec![];
             let env = HashMap::new();
             let mut url = None;
+            let mut is_connected = false;
+            let mut status_error: Option<String> = None;
 
             for line in output.lines() {
                 let line = line.trim();
@@ -360,6 +413,14 @@ pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> 
                         || scope_part.to_lowercase().contains("global")
                     {
                         scope = "user".to_string();
+                    }
+                } else if line.starts_with("Status:") {
+                    let status_part = line.replace("Status:", "").trim().to_string();
+                    if status_part.contains("✓") || status_part.to_lowercase().contains("connected") {
+                        is_connected = true;
+                    } else if status_part.contains("✗") || status_part.to_lowercase().contains("failed") {
+                        is_connected = false;
+                        status_error = Some(status_part);
                     }
                 } else if line.starts_with("Type:") {
                     transport = line.replace("Type:", "").trim().to_string();
@@ -386,11 +447,14 @@ pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> 
                 env,
                 url,
                 scope,
-                is_active: false,
+                is_active: is_connected,
                 status: ServerStatus {
-                    running: false,
-                    error: None,
-                    last_checked: None,
+                    running: is_connected,
+                    error: status_error,
+                    last_checked: Some(std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()),
                 },
             })
         }
@@ -680,6 +744,39 @@ pub async fn mcp_get_server_status() -> Result<HashMap<String, ServerStatus>, St
     Ok(HashMap::new())
 }
 
+/// Gets the MCP configuration file paths
+#[tauri::command]
+pub async fn mcp_get_config_paths(project_path: Option<String>) -> Result<MCPConfigPaths, String> {
+    info!("Getting MCP config paths");
+
+    // Get home directory for user config
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+
+    // User config: ~/.claude/settings.json
+    let user_path = home_dir.join(".claude").join("settings.json");
+
+    // Local config: <project>/.claude/settings.local.json
+    let local_path = if let Some(ref project) = project_path {
+        PathBuf::from(project).join(".claude").join("settings.local.json")
+    } else {
+        PathBuf::from(".claude").join("settings.local.json")
+    };
+
+    // Project config: <project>/.mcp.json
+    let project_config_path = if let Some(ref project) = project_path {
+        PathBuf::from(project).join(".mcp.json")
+    } else {
+        PathBuf::from(".mcp.json")
+    };
+
+    Ok(MCPConfigPaths {
+        local: local_path.to_string_lossy().to_string(),
+        project: project_config_path.to_string_lossy().to_string(),
+        user: user_path.to_string_lossy().to_string(),
+    })
+}
+
 /// Reads .mcp.json from the current project
 #[tauri::command]
 pub async fn mcp_read_project_config(project_path: String) -> Result<MCPProjectConfig, String> {
@@ -706,6 +803,35 @@ pub async fn mcp_read_project_config(project_path: String) -> Result<MCPProjectC
             Err(format!("Failed to read .mcp.json: {}", e))
         }
     }
+}
+
+/// Updates an existing MCP server (remove + add)
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_update(
+    app: AppHandle,
+    old_name: String,
+    name: String,
+    transport: String,
+    command: Option<String>,
+    args: Vec<String>,
+    env: HashMap<String, String>,
+    url: Option<String>,
+    scope: String,
+) -> Result<AddServerResult, String> {
+    info!("Updating MCP server: {} -> {}", old_name, name);
+
+    // Step 1: 删除旧服务器
+    if let Err(e) = execute_claude_mcp_command(&app, vec!["remove", &old_name]) {
+        error!("Failed to remove old server: {}", e);
+        return Ok(AddServerResult {
+            success: false,
+            message: format!("Failed to remove old server: {}", e),
+            server_name: None,
+        });
+    }
+
+    // Step 2: 添加新配置
+    mcp_add(app, name, transport, command, args, env, url, scope).await
 }
 
 /// Saves .mcp.json to the current project

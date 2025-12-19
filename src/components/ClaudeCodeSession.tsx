@@ -1308,7 +1308,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       <div className={cn("flex flex-col h-full bg-background", className)}>
         <div className="w-full h-full flex flex-col">
         {/* Header with Back Button */}
-        <div className="flex items-center gap-3 px-6 py-3 border-b border-border sticky top-0 z-40 bg-background/95 backdrop-blur-sm">
+        <div className="flex items-center gap-3 px-6 py-3 border-b border-border sticky top-0 z-20 bg-background/95 backdrop-blur-sm">
           <Button
             variant="ghost"
             size="icon"

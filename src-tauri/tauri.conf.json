@@ -61,7 +61,8 @@
       "rpm",
       "appimage",
       "app",
-      "dmg"
+      "dmg",
+      "msi"
     ],
     "icon": [
       "icons/32x32.png",
@@ -97,6 +98,15 @@
         "windowSize": { "width": 540, "height": 380 },
         "appPosition": { "x": 140, "y": 200 },
         "applicationFolderPosition": { "x": 400, "y": 200 }
+      }
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "tsp": false,
+      "wix": {
+        "language": "zh-CN"
       }
     }
   }

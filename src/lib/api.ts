@@ -377,6 +377,18 @@ export interface ServerStatus {
 }
 
 /**
+ * MCP configuration file paths
+ */
+export interface MCPConfigPaths {
+  /** Local config path (project-specific, private) */
+  local: string;
+  /** Project config path (.mcp.json, shared) */
+  project: string;
+  /** User config path (global) */
+  user: string;
+}
+
+/**
  * MCP configuration for project scope (.mcp.json)
  */
 export interface MCPProjectConfig {
@@ -675,6 +687,18 @@ export const api = {
       return await apiCall<string>("read_claude_md_file", { filePath });
     } catch (error) {
       console.error("Failed to read CLAUDE.md file:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Read text file content for preview
+   */
+  async readTextFile(filePath: string): Promise<string> {
+    try {
+      return await apiCall<string>("read_text_file", { filePath });
+    } catch (error) {
+      console.error("Failed to read text file:", error);
       throw error;
     }
   },
@@ -1501,6 +1525,36 @@ export const api = {
   },
 
   /**
+   * Updates an existing MCP server (remove + add)
+   */
+  async mcpUpdate(
+    oldName: string,
+    name: string,
+    transport: string,
+    command?: string,
+    args: string[] = [],
+    env: Record<string, string> = {},
+    url?: string,
+    scope: string = "local"
+  ): Promise<AddServerResult> {
+    try {
+      return await apiCall<AddServerResult>("mcp_update", {
+        old_name: oldName,
+        name,
+        transport,
+        command,
+        args,
+        env,
+        url,
+        scope,
+      });
+    } catch (error) {
+      console.error("Failed to update MCP server:", error);
+      throw error;
+    }
+  },
+
+  /**
    * Adds an MCP server from JSON configuration
    */
   async mcpAddJson(name: string, jsonConfig: string, scope: string = "local"): Promise<AddServerResult> {
@@ -1568,6 +1622,18 @@ export const api = {
       return await apiCall<Record<string, ServerStatus>>("mcp_get_server_status");
     } catch (error) {
       console.error("Failed to get server status:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets the MCP configuration file paths
+   */
+  async mcpGetConfigPaths(projectPath?: string): Promise<MCPConfigPaths> {
+    try {
+      return await apiCall<MCPConfigPaths>("mcp_get_config_paths", { project_path: projectPath });
+    } catch (error) {
+      console.error("Failed to get MCP config paths:", error);
       throw error;
     }
   },

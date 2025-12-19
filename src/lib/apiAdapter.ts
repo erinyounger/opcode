@@ -198,6 +198,7 @@ function mapCommandToEndpoint(command: string, _params?: any): string {
     'check_claude_version': '/api/settings/claude/version',
     'find_claude_md_files': '/api/claude-md',
     'read_claude_md_file': '/api/claude-md/read',
+    'read_text_file': '/api/text-file/read',
     'save_claude_md_file': '/api/claude-md/save',
     
     // Session management

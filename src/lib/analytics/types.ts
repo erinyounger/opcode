@@ -246,7 +246,7 @@ export interface AgentErrorProperties {
 // MCP properties
 export interface MCPServerAddedProperties {
   server_type: string;
-  configuration_method: 'manual' | 'preset' | 'import';
+  configuration_method: 'manual' | 'preset' | 'import' | 'edit';
 }
 
 export interface MCPServerRemovedProperties {

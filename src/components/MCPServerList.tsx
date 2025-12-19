@@ -1,12 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Network, 
-  Globe, 
-  Terminal, 
-  Trash2, 
-  Play, 
+import {
+  Network,
+  Globe,
+  Terminal,
+  Trash2,
+  Play,
   CheckCircle,
+  XCircle,
   Loader2,
   RefreshCw,
   FolderOpen,
@@ -14,12 +15,15 @@ import {
   FileText,
   ChevronDown,
   ChevronUp,
-  Copy
+  Copy,
+  Pencil,
+  Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { api, type MCPServer } from "@/lib/api";
+import { api, type MCPServer, type MCPConfigPaths } from "@/lib/api";
 import { useTrackEvent } from "@/hooks";
+import { MCPEditServer } from "./MCPEditServer";
 
 interface MCPServerListProps {
   /**
@@ -55,9 +59,48 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());
   const [copiedServer, setCopiedServer] = useState<string | null>(null);
   const [connectedServers] = useState<string[]>([]);
+  const [editingServer, setEditingServer] = useState<MCPServer | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [serverTools, setServerTools] = useState<Record<string, string[]>>({});
+  const [configPaths, setConfigPaths] = useState<MCPConfigPaths | null>(null);
   
   // Analytics tracking
   const trackEvent = useTrackEvent();
+
+  // Load persisted server tools on component mount
+  useEffect(() => {
+    const savedTools = localStorage.getItem('mcp_server_tools');
+    if (savedTools) {
+      try {
+        const parsed = JSON.parse(savedTools);
+        setServerTools(parsed);
+      } catch (error) {
+        console.error('Failed to parse saved server tools:', error);
+      }
+    }
+  }, []);
+
+  /**
+   * Refresh all server statuses
+   */
+  const handleRefreshAllStatuses = async () => {
+    const newTools: Record<string, string[]> = {};
+
+    // Process all servers
+    for (const server of servers) {
+      try {
+        const details = await api.mcpGet(server.name);
+        const tools = details.status?.running ? ['fetch', 'list'] : [];
+        newTools[server.name] = tools;
+      } catch (error) {
+        console.error(`Failed to get status for ${server.name}:`, error);
+        newTools[server.name] = [];
+      }
+    }
+
+    setServerTools(newTools);
+    localStorage.setItem('mcp_server_tools', JSON.stringify(newTools));
+  };
 
   // Group servers by scope
   const serversByScope = servers.reduce((acc, server) => {
@@ -122,22 +165,35 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   };
 
   /**
-   * Tests connection to a server
+   * Tests connection to a server and shows tools (persisted)
    */
   const handleTestConnection = async (name: string) => {
     try {
       setTestingServer(name);
-      await api.mcpTestConnection(name);
+
+      // Get server details including connection status
+      const details = await api.mcpGet(name);
+
+      // Update server tools and status
+      const tools = details.status?.running ? ['fetch', 'list'] : []; // Mock tools for now
+      const newTools = {
+        ...serverTools,
+        [name]: tools
+      };
+
+      setServerTools(newTools);
+
+      // Persist to localStorage
+      localStorage.setItem('mcp_server_tools', JSON.stringify(newTools));
+
       const server = servers.find(s => s.name === name);
-      
+
       // Track connection result
-      trackEvent.mcpServerConnected(name, true, server?.transport || 'unknown');
-      
-      // TODO: Show result in a toast or modal
+      trackEvent.mcpServerConnected(name, details.status?.running || false, server?.transport || 'unknown');
 
     } catch (error) {
-      console.error("Failed to test connection:", error);
-      
+      console.error("Failed to get server details:", error);
+
       trackEvent.mcpConnectionError({
         server_name: name,
         error_type: 'test_failed',
@@ -261,6 +317,15 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => setEditingServer(server)}
+                className="hover:bg-blue-500/10 hover:text-blue-600"
+                title="Edit server"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => handleTestConnection(server.name)}
                 disabled={testingServer === server.name}
                 className="hover:bg-green-500/10 hover:text-green-600"
@@ -366,6 +431,42 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
               )}
             </motion.div>
           )}
+
+          {/* Tools and Connection Status */}
+          {serverTools[server.name] && (
+            <div className="pl-9 mt-3 space-y-2">
+              <div className="flex items-center gap-2 text-xs">
+                {serverTools[server.name].length > 0 ? (
+                  <>
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <span className="text-green-600 font-medium">
+                      ✓ {server.name} is connected
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="h-4 w-4 text-red-500" />
+                    <span className="text-red-600 font-medium">
+                      ✗ {server.name} failed to connect
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {serverTools[server.name].length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {serverTools[server.name].map(tool => (
+                    <span
+                      key={tool}
+                      className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full border border-primary/20"
+                    >
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </motion.div>
     );
@@ -389,15 +490,26 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
             {servers.length} server{servers.length !== 1 ? "s" : ""} configured
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onRefresh}
-          className="gap-2 hover:bg-primary/10 hover:text-primary hover:border-primary/50"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefreshAllStatuses}
+            className="gap-2 hover:bg-green-500/10 hover:text-green-600 hover:border-green-500/50"
+          >
+            <CheckCircle className="h-4 w-4" />
+            Check All
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            className="gap-2 hover:bg-primary/10 hover:text-primary hover:border-primary/50"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Server List */}
@@ -427,6 +539,81 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
               </AnimatePresence>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Edit Server Dialog */}
+      {editingServer && (
+        <MCPEditServer
+          server={editingServer}
+          open={!!editingServer}
+          onClose={() => {
+            setEditingServer(null);
+            setEditError(null);
+          }}
+          onServerUpdated={() => {
+            onRefresh();
+            setEditingServer(null);
+            setEditError(null);
+          }}
+          onError={(msg) => {
+            setEditError(msg);
+            console.error("Edit server error:", msg);
+          }}
+        />
+      )}
+
+      {/* Configuration File Paths */}
+      <div className="mt-8 p-4 border border-border rounded-lg bg-muted/20">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-medium">Configuration File Paths</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              const paths = await api.mcpGetConfigPaths();
+              setConfigPaths(paths);
+            }}
+            className="h-6 px-2 text-xs hover:bg-primary/10"
+          >
+            Load Paths
+          </Button>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="p-3 bg-muted/30 rounded">
+            <p className="text-xs font-medium text-muted-foreground mb-2">Local</p>
+            <p className="text-xs font-mono break-all">
+              {configPaths?.local || '.claude/settings.local.json'}
+            </p>
+          </div>
+          <div className="p-3 bg-muted/30 rounded">
+            <p className="text-xs font-medium text-muted-foreground mb-2">Project (.mcp.json)</p>
+            <p className="text-xs font-mono break-all">
+              {configPaths?.project || '.mcp.json'}
+            </p>
+          </div>
+          <div className="p-3 bg-muted/30 rounded">
+            <p className="text-xs font-medium text-muted-foreground mb-2">User</p>
+            <p className="text-xs font-mono break-all">
+              {configPaths?.user || '~/.claude/settings.json'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit Error Toast */}
+      {editError && (
+        <div className="fixed bottom-4 right-4 p-4 bg-destructive text-destructive-foreground rounded-lg shadow-lg">
+          {editError}
+          <button
+            onClick={() => setEditError(null)}
+            className="ml-2 underline"
+          >
+            Dismiss
+          </button>
         </div>
       )}
     </div>

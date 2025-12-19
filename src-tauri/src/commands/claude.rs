@@ -1121,6 +1121,35 @@ pub async fn save_claude_md_file(file_path: String, content: String) -> Result<S
     Ok("File saved successfully".to_string())
 }
 
+/// Reads a text file with size limitation for preview purposes
+#[tauri::command]
+pub async fn read_text_file(file_path: String) -> Result<String, String> {
+    log::info!("Reading text file for preview: {}", file_path);
+
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+
+    // Get file metadata to check size
+    let metadata = fs::metadata(&path)
+        .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+    
+    // Limit file size to 10MB for preview
+    const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
+    
+    if metadata.len() > MAX_FILE_SIZE {
+        return Err(format!("File too large to preview ({} bytes). Maximum size is {} bytes", 
+            metadata.len(), MAX_FILE_SIZE));
+    }
+
+    // Read file content
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+    
+    Ok(content)
+}
+
 /// Loads the JSONL history for a specific session
 #[tauri::command]
 pub async fn load_session_history(

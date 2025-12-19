@@ -41,7 +41,7 @@ interface FileTypeFilter {
   extensions: string[];
 }
 
-// Text file extensions that can be opened with system editor
+// Text file extensions that can be previewed in dialog
 const TEXT_FILE_EXTENSIONS = ['txt', 'md', 'log', 'json', 'yaml', 'yml', 'xml', 'csv', 'ini', 'conf', 'toml', 'cfg', 'env', 'properties', 'sh', 'bat', 'cmd', 'ps1', 'bash', 'zsh'];
 
 const FILE_TYPE_FILTERS: FileTypeFilter[] = [
@@ -98,6 +98,12 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [serverUrl, setServerUrl] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<string>("all");
+  
+  // Text file preview state
+  const [previewFile, setPreviewFile] = useState<FileEntry | null>(null);
+  const [fileContent, setFileContent] = useState<string>("");
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
 
   // Build file tree from flat list
   const fileTree = useMemo(() => {
@@ -351,19 +357,44 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
         // Open in system browser (Chrome, etc.)
         await open(previewUrl);
       } else if (isTextFile) {
-        // Handle text files - open with system default text editor
-        // Build absolute path
-        const normalizedProjectPath = projectPath.replace(/\\/g, '/').replace(/\/$/, '');
-        const normalizedFilePath = file.path.replace(/\\/g, '/').replace(/^\//, '');
-        const absolutePath = `${normalizedProjectPath}/${normalizedFilePath}`.replace(/\/+/g, '/');
-        
-        // Open file with system default editor
-        await open(absolutePath);
+        // Handle text files - open in preview dialog
+        handlePreviewTextFile(file);
       }
     } catch (err) {
       console.error("Failed to open file:", err);
       setError(`Failed to open file: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  const handlePreviewTextFile = async (file: FileEntry) => {
+    try {
+      setIsLoadingPreview(true);
+      setPreviewFile(file);
+      setShowPreviewDialog(true);
+      setError(null);
+      
+      // Build absolute path
+      const normalizedProjectPath = projectPath.replace(/\\/g, '/').replace(/\/$/, '');
+      const normalizedFilePath = file.path.replace(/\\/g, '/').replace(/^\//, '');
+      const absolutePath = `${normalizedProjectPath}/${normalizedFilePath}`.replace(/\/+/g, '/');
+      
+      // Read file content using the API
+      const content = await api.readTextFile(absolutePath);
+      setFileContent(content);
+    } catch (err) {
+      console.error("Failed to read file:", err);
+      setError(`Failed to read file: ${err instanceof Error ? err.message : String(err)}`);
+      setFileContent("Failed to load file content");
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
+  const closePreviewDialog = () => {
+    setShowPreviewDialog(false);
+    setPreviewFile(null);
+    setFileContent("");
+    setError(null);
   };
 
   const renderTreeNode = (node: FileTreeNode, level: number = 0): React.ReactNode => {
@@ -462,9 +493,9 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                       e.stopPropagation();
                       handleFileClick(child.entry);
                     }}
-                    title={isHtml ? "Open in browser" : "Open in editor"}
+                    title={isHtml ? "Open in browser" : "Preview file"}
                   >
-                    <ExternalLink className="h-3 w-3" />
+                    {isTextFile ? <FileText className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />}
                   </Button>
                 )}
               </div>
@@ -554,6 +585,105 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
           <div className="space-y-1">{renderTreeNode(filteredTree)}</div>
         )}
       </div>
+
+      {/* Text File Preview Dialog */}
+      {showPreviewDialog && previewFile && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
+            {/* Dialog Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <div className="flex items-center gap-3">
+                <FileText className="h-5 w-5 text-blue-500" />
+                <div>
+                  <h3 className="font-semibold text-lg">{previewFile.name}</h3>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span>{(previewFile.size / 1024).toFixed(1)} KB</span>
+                    <span>{fileContent.split('\n').length} lines</span>
+                    <span>{fileContent.length} characters</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={loadFiles}
+                  className="h-8 w-8"
+                  title="Refresh file list"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={closePreviewDialog}
+                  className="h-8 w-8"
+                  title="Close preview"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Dialog Content */}
+            <div className="flex-1 overflow-hidden p-4">
+              {isLoadingPreview ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="flex items-center gap-3">
+                    <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Loading file content...</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full flex flex-col">
+                  {/* Content Controls */}
+                  <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
+                    <div className="text-sm text-muted-foreground">
+                      Text file preview
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const blob = new Blob([fileContent], { type: 'text/plain' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = previewFile.name;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                        title="Download file"
+                      >
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        Download
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(fileContent);
+                        }}
+                        title="Copy content"
+                      >
+                        Copy
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {/* Scrollable Content */}
+                  <div className="flex-1 overflow-auto">
+                    <pre className="text-sm whitespace-pre-wrap break-words font-mono leading-relaxed">
+                      {fileContent}
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

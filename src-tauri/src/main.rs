@@ -26,15 +26,15 @@ use commands::claude::{
     get_claude_settings, get_file_server_url, get_home_directory, get_hooks_config, get_project_sessions,
     get_recently_modified_files, get_session_timeline, get_system_prompt, list_checkpoints,
     list_directory_contents, list_project_files, list_projects, list_running_claude_sessions, load_session_history,
-    open_new_session, read_claude_md_file, restore_checkpoint, resume_claude_code,
+    open_new_session, read_claude_md_file, read_text_file, restore_checkpoint, resume_claude_code,
     save_claude_md_file, save_claude_settings, save_system_prompt, search_files,
     start_file_server, track_checkpoint_message, track_session_messages, update_checkpoint_settings,
     update_hooks_config, validate_hook_command, ClaudeProcessState, FileServerState,
 };
 use commands::mcp::{
-    mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_server_status, mcp_list,
-    mcp_read_project_config, mcp_remove, mcp_reset_project_choices, mcp_save_project_config,
-    mcp_serve, mcp_test_connection,
+    mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_config_paths,
+    mcp_get_server_status, mcp_list, mcp_read_project_config, mcp_remove,
+    mcp_reset_project_choices, mcp_save_project_config, mcp_serve, mcp_test_connection, mcp_update,
 };
 
 use commands::proxy::{apply_proxy_settings, get_proxy_settings, save_proxy_settings};
@@ -201,6 +201,7 @@ fn main() {
             save_claude_settings,
             find_claude_md_files,
             read_claude_md_file,
+            read_text_file,
             save_claude_md_file,
             load_session_history,
             execute_claude_code,
@@ -272,12 +273,14 @@ fn main() {
             mcp_list,
             mcp_get,
             mcp_remove,
+            mcp_update,
             mcp_add_json,
             mcp_add_from_claude_desktop,
             mcp_serve,
             mcp_test_connection,
             mcp_reset_project_choices,
             mcp_get_server_status,
+            mcp_get_config_paths,
             mcp_read_project_config,
             mcp_save_project_config,
             // Storage Management
