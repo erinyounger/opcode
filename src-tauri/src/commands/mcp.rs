@@ -113,11 +113,17 @@ pub struct MCPProjectConfig {
 /// Individual server configuration in .mcp.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPServerConfig {
+    #[serde(rename = "type")]
+    pub transport_type: String,
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
     pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub headers: Option<HashMap<String, String>>,
 }
 
 /// Result of adding a server
@@ -274,8 +280,8 @@ pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
                 return Ok(vec![]);
             }
 
-            // Parse the text output, handling multi-line commands
-            let mut servers = Vec::new();
+            // Parse the text output to get server names
+            let mut server_names = Vec::new();
             let lines: Vec<&str> = trimmed.lines().collect();
             info!("Total lines in output: {}", lines.len());
             for (idx, line) in lines.iter().enumerate() {
@@ -298,11 +304,10 @@ pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
 
                     if !potential_name.contains('/') && !potential_name.contains('\\') {
                         info!("Valid server name detected: {:?}", potential_name);
-                        let name = potential_name.to_string();
-                        let mut command_parts = vec![line[colon_pos + 1..].trim().to_string()];
-                        info!("Initial command part: {:?}", command_parts[0]);
+                        server_names.push(potential_name.to_string());
+                        info!("Added server name to list: {:?}", potential_name);
 
-                        // Check if command continues on next lines
+                        // Skip to next server (skip continuation lines)
                         i += 1;
                         while i < lines.len() {
                             let next_line = lines[i];
@@ -324,37 +329,10 @@ pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
                                     break;
                                 }
                             }
-                            // Otherwise, this line is a continuation of the command
-                            info!("Line {} is a continuation", i);
-                            command_parts.push(next_line.trim().to_string());
+                            // Otherwise, this line is a continuation - skip it
+                            info!("Line {} is a continuation, skipping", i);
                             i += 1;
                         }
-
-                        // Join all command parts
-                        let full_command = command_parts.join(" ");
-                        info!("Full command for server '{}': {:?}", name, full_command);
-
-                        // Clean up the command - remove status indicators like "- ✓ Connected" or "- ✗ Failed to connect"
-                        let cleaned_command = clean_command_string(&full_command);
-                        info!("Cleaned command for server '{}': {:?}", name, cleaned_command);
-
-                        // For now, we'll create a basic server entry
-                        servers.push(MCPServer {
-                            name: name.clone(),
-                            transport: "stdio".to_string(), // Default assumption
-                            command: Some(cleaned_command),
-                            args: vec![],
-                            env: HashMap::new(),
-                            url: None,
-                            scope: "local".to_string(), // Default assumption
-                            is_active: false,
-                            status: ServerStatus {
-                                running: false,
-                                error: None,
-                                last_checked: None,
-                            },
-                        });
-                        info!("Added server: {:?}", name);
 
                         continue;
                     } else {
@@ -367,13 +345,43 @@ pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
                 i += 1;
             }
 
-            info!("Found {} MCP servers total", servers.len());
-            for (idx, server) in servers.iter().enumerate() {
-                info!(
-                    "Server {}: name='{}', command={:?}",
-                    idx, server.name, server.command
-                );
+            info!("Found {} MCP servers total", server_names.len());
+            for (idx, name) in server_names.iter().enumerate() {
+                info!("Server {}: name='{}'", idx, name);
             }
+
+            // Get detailed information for each server including correct scope
+            let mut servers = Vec::new();
+            for name in server_names {
+                info!("Getting details for server: {:?}", name);
+                match mcp_get(app.clone(), name.clone()).await {
+                    Ok(server_details) => {
+                        info!("Successfully got details for server '{}': scope={}, transport={}",
+                              name, server_details.scope, server_details.transport);
+                        servers.push(server_details);
+                    }
+                    Err(e) => {
+                        error!("Failed to get details for server '{}': {}", name, e);
+                        // Add a basic server entry with the name if we can't get details
+                        servers.push(MCPServer {
+                            name: name.clone(),
+                            transport: "stdio".to_string(),
+                            command: None,
+                            args: vec![],
+                            env: HashMap::new(),
+                            url: None,
+                            scope: "local".to_string(),
+                            is_active: false,
+                            status: ServerStatus {
+                                running: false,
+                                error: Some(format!("Failed to get details: {}", e)),
+                                last_checked: None,
+                            },
+                        });
+                    }
+                }
+            }
+
             Ok(servers)
         }
         Err(e) => {
@@ -753,8 +761,8 @@ pub async fn mcp_get_config_paths(project_path: Option<String>) -> Result<MCPCon
     let home_dir = dirs::home_dir()
         .ok_or_else(|| "Could not find home directory".to_string())?;
 
-    // User config: ~/.claude/settings.json
-    let user_path = home_dir.join(".claude").join("settings.json");
+    // User config: ~/.claude.json (global, available in all projects)
+    let user_path = home_dir.join(".claude.json");
 
     // Local config: <project>/.claude/settings.local.json
     let local_path = if let Some(ref project) = project_path {

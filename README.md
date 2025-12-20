@@ -8,7 +8,7 @@
     <strong>A powerful GUI app and Toolkit for Claude Code</strong>
   </p>
   <p>
-    <strong>Create custom agents, manage interactive Claude Code sessions, run secure background agents, and more.</strong>
+    <strong>Manage projects, create intelligent agents, track usage, handle MCP servers, and access Claude Code through a beautiful desktop interface.</strong>
   </p>
   
   <p>
@@ -36,9 +36,9 @@ https://github.com/user-attachments/assets/6bceea0f-60b6-4c3e-a745-b891de00b8d0
 
 ## 🌟 Overview
 
-**opcode** is a powerful desktop application that transforms how you interact with Claude Code. Built with Tauri 2, it provides a beautiful GUI for managing your Claude Code sessions, creating custom agents, tracking usage, and much more.
+**opcode** is a comprehensive desktop application that transforms how you interact with Claude Code. Built with **Tauri 2** and **React**, it provides a beautiful GUI for managing projects, creating intelligent agents, tracking usage, handling MCP servers, and much more.
 
-Think of opcode as your command center for Claude Code - bridging the gap between the command-line tool and a visual experience that makes AI-assisted development more intuitive and productive.
+Think of opcode as your complete command center for Claude Code - bridging the gap between command-line tools and a visual experience that makes AI-assisted development more intuitive, organized, and productive.
 
 ## 📋 Table of Contents
 
@@ -46,11 +46,13 @@ Think of opcode as your command center for Claude Code - bridging the gap betwee
 - [✨ Features](#-features)
   - [🗂️ Project & Session Management](#️-project--session-management)
   - [🤖 CC Agents](#-cc-agents)
-  
   - [📊 Usage Analytics Dashboard](#-usage-analytics-dashboard)
   - [🔌 MCP Server Management](#-mcp-server-management)
   - [⏰ Timeline & Checkpoints](#-timeline--checkpoints)
   - [📝 CLAUDE.md Management](#-claudemd-management)
+  - [🌐 Web Server Mode](#-web-server-mode)
+  - [⚙️ Proxy & Settings](#️-proxy--settings)
+  - [🔧 Slash Commands](#-slash-commands)
 - [📖 Usage](#-usage)
   - [Getting Started](#getting-started)
   - [Managing Projects](#managing-projects)
@@ -78,6 +80,10 @@ Think of opcode as your command center for Claude Code - bridging the gap betwee
 - **Agent Library**: Build a collection of purpose-built agents for different tasks
 - **Background Execution**: Run agents in separate processes for non-blocking operations
 - **Execution History**: Track all agent runs with detailed logs and performance metrics
+- **GitHub Integration**: Browse and import agents directly from GitHub
+- **Agent Export/Import**: Share agent configurations with others
+- **Real-time Monitoring**: Live output streaming and execution status
+- **Permission Control**: Fine-grained file read/write and network access permissions
 
 
 
@@ -99,12 +105,34 @@ Think of opcode as your command center for Claude Code - bridging the gap betwee
 - **Instant Restore**: Jump back to any checkpoint with one click
 - **Fork Sessions**: Create new branches from existing checkpoints
 - **Diff Viewer**: See exactly what changed between checkpoints
+- **File Tracking**: Automatic tracking of file changes between checkpoints
+- **Auto Checkpoints**: Configurable automatic checkpoint creation
+- **Timeline Stats**: View comprehensive session statistics and metadata
 
 ### 📝 **CLAUDE.md Management**
 - **Built-in Editor**: Edit CLAUDE.md files directly within the app
 - **Live Preview**: See your markdown rendered in real-time
 - **Project Scanner**: Find all CLAUDE.md files in your projects
 - **Syntax Highlighting**: Full markdown support with syntax highlighting
+- **File Browser Integration**: Seamlessly browse and edit files within projects
+
+### 🌐 **Web Server Mode**
+- **Browser Access**: Access opcode features through any web browser
+- **WebSocket Support**: Real-time Claude interaction via WebSocket
+- **Mobile Friendly**: Optimized for mobile and tablet devices
+- **Remote Access**: Access your Claude sessions from anywhere
+- **Cross-Platform**: Works on any device with a modern browser
+
+### ⚙️ **Proxy & Settings**
+- **Proxy Configuration**: Support for HTTP, HTTPS, and SOCKS proxies
+- **Claude Binary Management**: Auto-detection and manual configuration of Claude CLI
+- **Global Shortcuts**: System-wide keyboard shortcuts
+- **System Integration**: Deep integration with macOS, Windows, and Linux
+
+### 🔧 **Slash Commands**
+- **Custom Commands**: Create and manage custom slash commands
+- **Command Library**: Build a collection of reusable commands
+- **Quick Access**: Fast command execution from anywhere in the app
 
 ## 📖 Usage
 
@@ -160,8 +188,31 @@ Menu → MCP Manager → Add Server → Configure
 ### Prerequisites
 
 - **Claude Code CLI**: Install from [Claude's official site](https://claude.ai/code)
+- **WebView2** (Windows 10/11): Usually pre-installed on Windows 11
 
-### Release Executables Will Be Published Soon
+### Release Downloads
+
+Pre-built executables are available for Windows, macOS, and Linux. Check the [Releases](https://github.com/getAsterisk/opcode/releases) page for downloads.
+
+### Installation Methods
+
+#### Windows
+1. Download `opcode-setup.exe` from the releases page
+2. Run the installer and follow the prompts
+3. Launch opcode from Start Menu or Desktop
+
+#### macOS
+1. Download `opcode.dmg` from the releases page
+2. Open the DMG and drag opcode to Applications
+3. Launch from Applications folder
+
+#### Linux
+1. Download the appropriate package (`.deb`, `.AppImage`, or `.rpm`)
+2. Install using your package manager or run the AppImage
+3. Launch from your application menu
+
+> [!NOTE]
+> On Linux, you may need to make the AppImage executable: `chmod +x opcode.AppImage`
 
 ## 🔨 Build from Source
 
@@ -336,31 +387,62 @@ All artifacts are located in `src-tauri/target/release/`.
 
 - **Frontend**: React 18 + TypeScript + Vite 6
 - **Backend**: Rust with Tauri 2
-- **UI Framework**: Tailwind CSS v4 + shadcn/ui
+- **UI Framework**: Tailwind CSS v4 + shadcn/ui + Radix UI
+- **State Management**: Zustand
 - **Database**: SQLite (via rusqlite)
+- **Web Server**: Axum (with WebSocket support)
 - **Package Manager**: Bun
+- **Process Management**: Tokio (async runtime)
+- **Data Visualization**: Recharts
 
 ### Project Structure
 
 ```
 opcode/
-├── src/                   # React frontend
-│   ├── components/        # UI components
-│   ├── lib/               # API client & utilities
-│   └── assets/            # Static assets
-├── src-tauri/             # Rust backend
+├── src/                          # React frontend
+│   ├── components/               # UI components
+│   │   ├── ui/                   # shadcn/ui base components
+│   │   ├── claude-code-session/  # Claude session components
+│   │   ├── Agent*.tsx            # Agent management
+│   │   ├── FilePicker.tsx        # File browser
+│   │   └── ...
+│   ├── lib/                      # Utilities & API
+│   │   ├── api.ts                # Tauri API client
+│   │   ├── apiAdapter.ts         # Desktop/Web adapter
+│   │   └── analytics/            # Analytics module
+│   ├── stores/                   # Zustand state stores
+│   ├── services/                 # Business logic
+│   ├── hooks/                    # Custom React hooks
+│   └── types/                    # TypeScript definitions
+├── src-tauri/                    # Rust backend
 │   ├── src/
-│   │   ├── commands/      # Tauri command handlers
-│   │   ├── checkpoint/    # Timeline management
-│   │   └── process/       # Process management
-│   └── tests/             # Rust test suite
-└── public/                # Public assets
+│   │   ├── commands/             # Tauri command handlers
+│   │   │   ├── agents.rs         # Agent management
+│   │   │   ├── claude.rs         # Claude interactions
+│   │   │   ├── mcp.rs            # MCP server management
+│   │   │   ├── storage.rs        # SQLite operations
+│   │   │   └── usage.rs          # Usage analytics
+│   │   ├── checkpoint/           # Checkpoint system
+│   │   │   ├── manager.rs        # Timeline management
+│   │   │   └── storage.rs        # Checkpoint persistence
+│   │   ├── process/              # Process management
+│   │   │   └── registry.rs       # Process registry
+│   │   ├── web_server.rs         # Axum web server
+│   │   └── main.rs               # Tauri entry point
+│   ├── capabilities/             # Tauri permissions
+│   └── tauri.conf.json           # Tauri configuration
+├── cc_agents/                    # CC agent configs
+├── justfile                      # Build tasks
+└── package.json                  # Frontend dependencies
 ```
 
 ### Development Commands
 
 ```bash
-# Start development server
+# Install dependencies
+bun install
+
+# Start development server (with hot reload)
 bun run tauri dev
 
 # Run frontend only
@@ -372,19 +454,60 @@ bunx tsc --noEmit
 # Run Rust tests
 cd src-tauri && cargo test
 
-# Format code
+# Format Rust code
 cd src-tauri && cargo fmt
+
+# Check Rust code with clippy
+cd src-tauri && cargo clippy
+
+# Build production version
+bun run tauri build
+
+# Build debug version (faster)
+bun run tauri build --debug
+
+# Clean build artifacts
+just clean  # or manually:
+rm -rf node_modules dist
+cd src-tauri && cargo clean
+```
+
+### Just Commands (Optional)
+
+If you have `just` installed, additional commands are available:
+
+```bash
+# View all available commands
+just
+
+# Quick build and run
+just run
+
+# Start web server mode
+just web
+
+# Get local IP (for mobile access)
+just ip
+
+# Full rebuild
+just rebuild
 ```
 
 ## 🔒 Security
 
 opcode prioritizes your privacy and security:
 
-1. **Process Isolation**: Agents run in separate processes
-2. **Permission Control**: Configure file and network access per agent
-3. **Local Storage**: All data stays on your machine
-4. **No Telemetry**: No data collection or tracking
+1. **Process Isolation**: Agents run in separate, isolated processes
+2. **Permission Control**: Configure fine-grained file read/write and network access per agent
+3. **Local Storage**: All data stays on your machine (SQLite database)
+4. **No Telemetry**: Zero data collection or tracking
 5. **Open Source**: Full transparency through open source code
+6. **API Validation**: All frontend inputs validated in the backend
+7. **Secure Communication**: WebSocket connections for real-time features
+8. **File System Security**: Tauri capabilities system controls filesystem access
+
+> [!WARNING]
+> While opcode provides security features, always review agent configurations and permissions before execution, especially when dealing with sensitive projects or data.
 
 ## 🤝 Contributing
 
@@ -396,8 +519,18 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - ✨ New features and enhancements
 - 📚 Documentation improvements
 - 🎨 UI/UX enhancements
-- 🧪 Test coverage
-- 🌐 Internationalization
+- 🧪 Test coverage improvements
+- 🌐 Internationalization (i18n)
+- 🔧 Performance optimizations
+- 📊 Analytics and reporting features
+- 🌐 Web server mode improvements
+
+### Development Setup Tips
+
+1. **Enable Debug Logging**: Set `RUST_LOG=debug` environment variable for detailed logs
+2. **Use VS Code**: Install the recommended extensions for Rust and TypeScript
+3. **Browser DevTools**: Use F12 in the app to debug the frontend
+4. **Database Viewer**: Use any SQLite browser to inspect the local database
 
 ## 📄 License
 

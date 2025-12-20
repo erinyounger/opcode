@@ -27,6 +27,7 @@ import { StorageTab } from "./StorageTab";
 import { HooksEditor } from "./HooksEditor";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { ProxySettings } from "./ProxySettings";
+import { SkillManager } from "./SkillManager";
 import { useTheme, useTrackEvent } from "@/hooks";
 import { analytics } from "@/lib/analytics";
 import { TabPersistenceService } from "@/services/tabPersistence";
@@ -56,7 +57,7 @@ interface EnvironmentVariable {
 
 /**
  * Comprehensive Settings UI for managing Claude Code settings
- * Provides a no-code interface for editing the settings.json file
+ * Provides a no-code interface for editing the .claude.json file
  */
 export const Settings: React.FC<SettingsProps> = ({
   className,
@@ -412,13 +413,14 @@ export const Settings: React.FC<SettingsProps> = ({
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-8 w-full mb-6 h-auto p-1">
+            <TabsList className="grid grid-cols-9 w-full mb-6 h-auto p-1">
               <TabsTrigger value="general" className="py-2.5 px-3">General</TabsTrigger>
               <TabsTrigger value="permissions" className="py-2.5 px-3">Permissions</TabsTrigger>
               <TabsTrigger value="environment" className="py-2.5 px-3">Environment</TabsTrigger>
               <TabsTrigger value="advanced" className="py-2.5 px-3">Advanced</TabsTrigger>
               <TabsTrigger value="hooks" className="py-2.5 px-3">Hooks</TabsTrigger>
               <TabsTrigger value="commands" className="py-2.5 px-3">Commands</TabsTrigger>
+              <TabsTrigger value="skills" className="py-2.5 px-3">Skills</TabsTrigger>
               <TabsTrigger value="storage" className="py-2.5 px-3">Storage</TabsTrigger>
               <TabsTrigger value="proxy" className="py-2.5 px-3">Proxy</TabsTrigger>
             </TabsList>
@@ -1141,7 +1143,7 @@ export const Settings: React.FC<SettingsProps> = ({
                       <pre>{JSON.stringify(settings, null, 2)}</pre>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      This shows the raw JSON that will be saved to ~/.claude/settings.json
+                      This shows the raw JSON that will be saved to ~/.claude.json
                     </p>
                   </div>
                 </div>
@@ -1156,7 +1158,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     <h3 className="text-base font-semibold mb-2">User Hooks</h3>
                     <p className="text-body-small text-muted-foreground mb-4">
                       Configure hooks that apply to all Claude Code sessions for your user account.
-                      These are stored in <code className="mx-1 px-2 py-1 bg-muted rounded text-xs">~/.claude/settings.json</code>
+                      These are stored in <code className="mx-1 px-2 py-1 bg-muted rounded text-xs">~/.claude.json</code>
                     </p>
                   </div>
                   
@@ -1189,7 +1191,7 @@ export const Settings: React.FC<SettingsProps> = ({
             {/* Proxy Settings */}
             <TabsContent value="proxy">
               <Card className="p-6">
-                <ProxySettings 
+                <ProxySettings
                   setToast={setToast}
                   onChange={(hasChanges, _getSettings, save) => {
                     setProxySettingsChanged(hasChanges);
@@ -1198,7 +1200,12 @@ export const Settings: React.FC<SettingsProps> = ({
                 />
               </Card>
             </TabsContent>
-            
+
+            {/* Skills Management */}
+            <TabsContent value="skills" className="space-y-6 mt-6">
+              <SkillManager />
+            </TabsContent>
+
           </Tabs>
         </div>
       )}

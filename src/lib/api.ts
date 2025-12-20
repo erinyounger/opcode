@@ -58,7 +58,7 @@ export interface Session {
 }
 
 /**
- * Represents the settings from ~/.claude/settings.json
+ * Represents the settings from ~/.claude.json
  */
 export interface ClaudeSettings {
   [key: string]: any;
@@ -365,6 +365,49 @@ export interface MCPServer {
 }
 
 /**
+ * Represents a Skill's metadata extracted from YAML frontmatter
+ */
+export interface SkillMetadata {
+  name: string;
+  description: string;
+  allowed_tools?: string[];
+}
+
+/**
+ * Represents a skill file
+ */
+export interface SkillFile {
+  name: string;
+  path: string;
+  content?: string;
+  is_directory: boolean;
+}
+
+/**
+ * Represents a complete Skill
+ */
+export interface Skill {
+  name: string;
+  skill_type: string; // "personal" or "project"
+  description: string;
+  file_path: string;
+  yaml_frontmatter?: string;
+  markdown_content: string;
+  files: SkillFile[];
+  allowed_tools?: string[];
+  last_modified: string;
+}
+
+/**
+ * Validation result for a skill
+ */
+export interface ValidationResult {
+  is_valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+/**
  * Server status information
  */
 export interface ServerStatus {
@@ -399,9 +442,12 @@ export interface MCPProjectConfig {
  * Individual server configuration in .mcp.json
  */
 export interface MCPServerConfig {
+  type: string;
   command: string;
   args: string[];
   env: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
 }
 
 /**
@@ -2044,6 +2090,214 @@ export const api = {
       return await apiCall<string>("slash_command_delete", { commandId, projectPath });
     } catch (error) {
       console.error("Failed to delete slash command:", error);
+      throw error;
+    }
+  },
+
+  // Skills API methods
+
+  /**
+   * Lists all skills (both personal and project)
+   * @returns Promise resolving to array of skills
+   */
+  async skillListAll(): Promise<Skill[]> {
+    try {
+      return await apiCall<Skill[]>("skill_list_all");
+    } catch (error) {
+      console.error("Failed to list all skills:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Lists skills by type (personal or project)
+   * @param skillType - Type of skills to list: "personal" or "project"
+   * @returns Promise resolving to array of skills
+   */
+  async skillListByType(skillType: string): Promise<Skill[]> {
+    try {
+      return await apiCall<Skill[]>("skill_list_by_type", { skillType });
+    } catch (error) {
+      console.error(`Failed to list ${skillType} skills:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Reads a skill by name and type
+   * @param name - The skill name
+   * @param skillType - The skill type: "personal" or "project"
+   * @returns Promise resolving to the skill
+   */
+  async skillRead(name: string, skillType: string): Promise<Skill> {
+    try {
+      return await apiCall<Skill>("skill_read", { name, skill_type: skillType });
+    } catch (error) {
+      console.error(`Failed to read skill ${name}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Creates a new skill
+   * @param name - The skill name
+   * @param skillType - The skill type: "personal" or "project"
+   * @param description - The skill description
+   * @param markdownContent - The markdown content
+   * @param allowedTools - Optional list of allowed tools
+   * @returns Promise resolving to the created skill
+   */
+  async skillCreate(
+    name: string,
+    skillType: string,
+    description: string,
+    markdownContent: string,
+    allowedTools?: string[]
+  ): Promise<Skill> {
+    try {
+      return await apiCall<Skill>("skill_create", {
+        name,
+        skillType,
+        description,
+        markdownContent,
+        allowedTools,
+      });
+    } catch (error) {
+      console.error(`Failed to create skill ${name}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Updates an existing skill
+   * @param name - The skill name
+   * @param skillType - The skill type: "personal" or "project"
+   * @param description - Optional updated description
+   * @param markdownContent - Optional updated markdown content
+   * @param allowedTools - Optional updated allowed tools
+   * @returns Promise resolving to the updated skill
+   */
+  async skillUpdate(
+    name: string,
+    skillType: string,
+    description?: string,
+    markdownContent?: string,
+    allowedTools?: string[]
+  ): Promise<Skill> {
+    try {
+      return await apiCall<Skill>("skill_update", {
+        name,
+        skillType,
+        description,
+        markdownContent,
+        allowedTools,
+      });
+    } catch (error) {
+      console.error(`Failed to update skill ${name}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Deletes a skill
+   * @param name - The skill name
+   * @param skillType - The skill type: "personal" or "project"
+   * @returns Promise resolving when the skill is deleted
+   */
+  async skillDelete(name: string, skillType: string): Promise<void> {
+    try {
+      return await apiCall<void>("skill_delete", { name, skillType });
+    } catch (error) {
+      console.error(`Failed to delete skill ${name}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Validates a skill format
+   * @param name - The skill name
+   * @param skillType - The skill type: "personal" or "project"
+   * @param description - The skill description
+   * @param markdownContent - The markdown content
+   * @returns Promise resolving to validation result
+   */
+  async skillValidate(
+    name: string,
+    skillType: string,
+    description: string,
+    markdownContent: string
+  ): Promise<ValidationResult> {
+    try {
+      return await apiCall<ValidationResult>("skill_validate", {
+        name,
+        skillType,
+        description,
+        markdownContent,
+      });
+    } catch (error) {
+      console.error(`Failed to validate skill ${name}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Creates a file in a skill directory
+   * @param skillName - The skill name
+   * @param skillType - The skill type: "personal" or "project"
+   * @param fileName - The file name to create
+   * @param content - The file content
+   * @returns Promise resolving when the file is created
+   */
+  async skillCreateFile(skillName: string, skillType: string, fileName: string, content: string): Promise<void> {
+    try {
+      return await apiCall<void>("skill_create_file", {
+        skillName,
+        skillType,
+        fileName,
+        content,
+      });
+    } catch (error) {
+      console.error(`Failed to create file ${fileName} in skill ${skillName}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Reads a file from a skill directory
+   * @param skillName - The skill name
+   * @param skillType - The skill type: "personal" or "project"
+   * @param fileName - The file name to read
+   * @returns Promise resolving to the file content
+   */
+  async skillReadFile(skillName: string, skillType: string, fileName: string): Promise<string> {
+    try {
+      return await apiCall<string>("skill_read_file", {
+        skillName,
+        skillType,
+        fileName,
+      });
+    } catch (error) {
+      console.error(`Failed to read file ${fileName} from skill ${skillName}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Deletes a file from a skill directory
+   * @param skillName - The skill name
+   * @param skillType - The skill type: "personal" or "project"
+   * @param fileName - The file name to delete
+   * @returns Promise resolving when the file is deleted
+   */
+  async skillDeleteFile(skillName: string, skillType: string, fileName: string): Promise<void> {
+    try {
+      return await apiCall<void>("skill_delete_file", {
+        skillName,
+        skillType,
+        fileName,
+      });
+    } catch (error) {
+      console.error(`Failed to delete file ${fileName} from skill ${skillName}:`, error);
       throw error;
     }
   },

@@ -208,13 +208,17 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
    * Gets icon for transport type
    */
   const getTransportIcon = (transport: string) => {
-    switch (transport) {
+    switch (transport.toLowerCase()) {
       case "stdio":
         return <Terminal className="h-4 w-4 text-amber-500" />;
-      case "sse":
+      case "http":
         return <Globe className="h-4 w-4 text-emerald-500" />;
-      default:
+      case "sse":
+        return <Globe className="h-4 w-4 text-orange-500" />;
+      case "websocket":
         return <Network className="h-4 w-4 text-blue-500" />;
+      default:
+        return <Network className="h-4 w-4 text-slate-500" />;
     }
   };
 
@@ -574,7 +578,10 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
             variant="ghost"
             size="sm"
             onClick={async () => {
-              const paths = await api.mcpGetConfigPaths();
+              // Use current working directory or a reasonable default
+              const currentPath = window.location.pathname || '/';
+              const projectPath = currentPath.startsWith('/') ? currentPath : '/';
+              const paths = await api.mcpGetConfigPaths(projectPath);
               setConfigPaths(paths);
             }}
             className="h-6 px-2 text-xs hover:bg-primary/10"
@@ -598,7 +605,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
           <div className="p-3 bg-muted/30 rounded">
             <p className="text-xs font-medium text-muted-foreground mb-2">User</p>
             <p className="text-xs font-mono break-all">
-              {configPaths?.user || '~/.claude/settings.json'}
+              {configPaths?.user || '~/.claude.json'}
             </p>
           </div>
         </div>

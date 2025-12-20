@@ -32,12 +32,16 @@ use commands::claude::{
     update_hooks_config, validate_hook_command, ClaudeProcessState, FileServerState,
 };
 use commands::mcp::{
-    mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_config_paths,
+    mcp_add, mcp_add_json, mcp_get, mcp_get_config_paths,
     mcp_get_server_status, mcp_list, mcp_read_project_config, mcp_remove,
     mcp_reset_project_choices, mcp_save_project_config, mcp_serve, mcp_test_connection, mcp_update,
 };
 
 use commands::proxy::{apply_proxy_settings, get_proxy_settings, save_proxy_settings};
+use commands::skills::{
+    skill_create, skill_create_file, skill_delete, skill_delete_file, skill_list_all,
+    skill_list_by_type, skill_read, skill_read_file, skill_update, skill_validate,
+};
 use commands::storage::{
     storage_delete_row, storage_execute_sql, storage_insert_row, storage_list_tables,
     storage_read_table, storage_reset_database, storage_update_row,
@@ -275,7 +279,6 @@ fn main() {
             mcp_remove,
             mcp_update,
             mcp_add_json,
-            mcp_add_from_claude_desktop,
             mcp_serve,
             mcp_test_connection,
             mcp_reset_project_choices,
@@ -299,6 +302,17 @@ fn main() {
             // Proxy Settings
             get_proxy_settings,
             save_proxy_settings,
+            // Skills Management
+            skill_list_all,
+            skill_list_by_type,
+            skill_read,
+            skill_create,
+            skill_update,
+            skill_delete,
+            skill_validate,
+            skill_create_file,
+            skill_read_file,
+            skill_delete_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

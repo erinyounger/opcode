@@ -97,12 +97,14 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
         for (const [name, config] of Object.entries(jsonData.mcpServers)) {
           try {
             const serverConfig = {
-              type: "stdio",
+              type: (config as any).type || "stdio",
               command: (config as any).command,
               args: (config as any).args || [],
-              env: (config as any).env || {}
+              env: (config as any).env || {},
+              url: (config as any).url,
+              headers: (config as any).headers
             };
-            
+
             const result = await api.mcpAddJson(name, JSON.stringify(serverConfig), importScope);
             if (result.success) {
               imported++;

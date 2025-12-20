@@ -34,65 +34,108 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
   onServerAdded,
   onError,
 }) => {
-  const [transport, setTransport] = useState<"stdio" | "sse">("stdio");
+  const [transport, setTransport] = useState<"stdio" | "http" | "sse" | "websocket">("stdio");
   const [saving, setSaving] = useState(false);
-  
+
   // Analytics tracking
   const trackEvent = useTrackEvent();
-  
+
   // Stdio server state
   const [stdioName, setStdioName] = useState("");
   const [stdioCommand, setStdioCommand] = useState("");
   const [stdioArgs, setStdioArgs] = useState("");
   const [stdioScope, setStdioScope] = useState("local");
   const [stdioEnvVars, setStdioEnvVars] = useState<EnvironmentVariable[]>([]);
-  
+
+  // HTTP server state
+  const [httpName, setHttpName] = useState("");
+  const [httpUrl, setHttpUrl] = useState("");
+  const [httpScope, setHttpScope] = useState("local");
+  const [httpEnvVars, setHttpEnvVars] = useState<EnvironmentVariable[]>([]);
+
   // SSE server state
   const [sseName, setSseName] = useState("");
   const [sseUrl, setSseUrl] = useState("");
   const [sseScope, setSseScope] = useState("local");
   const [sseEnvVars, setSseEnvVars] = useState<EnvironmentVariable[]>([]);
 
+  // WebSocket server state
+  const [wsName, setWsName] = useState("");
+  const [wsUrl, setWsUrl] = useState("");
+  const [wsScope, setWsScope] = useState("local");
+  const [wsEnvVars, setWsEnvVars] = useState<EnvironmentVariable[]>([]);
+
   /**
    * Adds a new environment variable
    */
-  const addEnvVar = (type: "stdio" | "sse") => {
+  const addEnvVar = (type: "stdio" | "http" | "sse" | "websocket") => {
     const newVar: EnvironmentVariable = {
       id: `env-${Date.now()}`,
       key: "",
       value: "",
     };
-    
-    if (type === "stdio") {
-      setStdioEnvVars(prev => [...prev, newVar]);
-    } else {
-      setSseEnvVars(prev => [...prev, newVar]);
+
+    switch (type) {
+      case "stdio":
+        setStdioEnvVars(prev => [...prev, newVar]);
+        break;
+      case "http":
+        setHttpEnvVars(prev => [...prev, newVar]);
+        break;
+      case "sse":
+        setSseEnvVars(prev => [...prev, newVar]);
+        break;
+      case "websocket":
+        setWsEnvVars(prev => [...prev, newVar]);
+        break;
     }
   };
 
   /**
    * Updates an environment variable
    */
-  const updateEnvVar = (type: "stdio" | "sse", id: string, field: "key" | "value", value: string) => {
-    if (type === "stdio") {
-      setStdioEnvVars(prev => prev.map(v => 
-        v.id === id ? { ...v, [field]: value } : v
-      ));
-    } else {
-      setSseEnvVars(prev => prev.map(v => 
-        v.id === id ? { ...v, [field]: value } : v
-      ));
+  const updateEnvVar = (type: "stdio" | "http" | "sse" | "websocket", id: string, field: "key" | "value", value: string) => {
+    switch (type) {
+      case "stdio":
+        setStdioEnvVars(prev => prev.map(v =>
+          v.id === id ? { ...v, [field]: value } : v
+        ));
+        break;
+      case "http":
+        setHttpEnvVars(prev => prev.map(v =>
+          v.id === id ? { ...v, [field]: value } : v
+        ));
+        break;
+      case "sse":
+        setSseEnvVars(prev => prev.map(v =>
+          v.id === id ? { ...v, [field]: value } : v
+        ));
+        break;
+      case "websocket":
+        setWsEnvVars(prev => prev.map(v =>
+          v.id === id ? { ...v, [field]: value } : v
+        ));
+        break;
     }
   };
 
   /**
    * Removes an environment variable
    */
-  const removeEnvVar = (type: "stdio" | "sse", id: string) => {
-    if (type === "stdio") {
-      setStdioEnvVars(prev => prev.filter(v => v.id !== id));
-    } else {
-      setSseEnvVars(prev => prev.filter(v => v.id !== id));
+  const removeEnvVar = (type: "stdio" | "http" | "sse" | "websocket", id: string) => {
+    switch (type) {
+      case "stdio":
+        setStdioEnvVars(prev => prev.filter(v => v.id !== id));
+        break;
+      case "http":
+        setHttpEnvVars(prev => prev.filter(v => v.id !== id));
+        break;
+      case "sse":
+        setSseEnvVars(prev => prev.filter(v => v.id !== id));
+        break;
+      case "websocket":
+        setWsEnvVars(prev => prev.filter(v => v.id !== id));
+        break;
     }
   };
 

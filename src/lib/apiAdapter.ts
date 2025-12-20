@@ -217,7 +217,6 @@ function mapCommandToEndpoint(command: string, _params?: any): string {
     'mcp_get': '/api/mcp/servers/{name}',
     'mcp_remove': '/api/mcp/servers/{name}',
     'mcp_add_json': '/api/mcp/servers/json',
-    'mcp_add_from_claude_desktop': '/api/mcp/import/claude-desktop',
     'mcp_serve': '/api/mcp/serve',
     'mcp_test_connection': '/api/mcp/servers/{name}/test',
     'mcp_reset_project_choices': '/api/mcp/reset-choices',

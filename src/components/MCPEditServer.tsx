@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { Loader2, Terminal, Globe, Plus, Trash2 } from "lucide-react";
+import { Loader2, Terminal, Globe, Plus, Trash2, Network } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SelectComponent } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -177,11 +176,20 @@ export const MCPEditServer: React.FC<MCPEditServerProps> = ({
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {server.transport === "stdio" ? (
-              <Terminal className="h-5 w-5 text-amber-500" />
-            ) : (
-              <Globe className="h-5 w-5 text-emerald-500" />
-            )}
+            {(() => {
+              switch (server.transport.toLowerCase()) {
+                case "stdio":
+                  return <Terminal className="h-5 w-5 text-amber-500" />;
+                case "http":
+                  return <Globe className="h-5 w-5 text-emerald-500" />;
+                case "sse":
+                  return <Globe className="h-5 w-5 text-orange-500" />;
+                case "websocket":
+                  return <Network className="h-5 w-5 text-blue-500" />;
+                default:
+                  return <Network className="h-5 w-5 text-slate-500" />;
+              }
+            })()}
             Edit MCP Server
           </DialogTitle>
           <DialogDescription>
@@ -231,32 +239,72 @@ export const MCPEditServer: React.FC<MCPEditServerProps> = ({
             </>
           )}
 
-          {/* URL (SSE only) */}
-          {server.transport === "sse" && (
+          {/* URL (for HTTP/SSE/WebSocket) */}
+          {(server.transport === "http" || server.transport === "sse" || server.transport === "websocket") && (
             <div className="space-y-2">
               <Label htmlFor="edit-url">URL</Label>
               <Input
                 id="edit-url"
-                placeholder="https://example.com/sse-endpoint"
+                placeholder="https://example.com/mcp-endpoint"
                 value={url}
                 onChange={e => setUrl(e.target.value)}
                 className="font-mono"
               />
+              {server.transport === "sse" && (
+                <p className="text-xs text-orange-600">
+                  ⚠️ SSE is deprecated. Consider using HTTP instead.
+                </p>
+              )}
             </div>
           )}
 
-          {/* Scope */}
+          {/* Headers (HTTP only) */}
+          {server.transport === "http" && (
+            <div className="space-y-2">
+              <Label>Headers (Optional)</Label>
+              <div className="space-y-2">
+                {Object.entries(server.env || {}).map(([key, value]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <Input
+                      placeholder="Header Name"
+                      value={key}
+                      disabled
+                      className="flex-1 font-mono text-sm bg-muted/50"
+                    />
+                    <span className="text-muted-foreground">:</span>
+                    <Input
+                      placeholder="Header Value"
+                      value={value}
+                      disabled
+                      className="flex-1 font-mono text-sm bg-muted/50"
+                    />
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">
+                  Headers are stored in environment variables. Use the environment variables section below to manage them.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Scope - Read Only */}
           <div className="space-y-2">
             <Label htmlFor="edit-scope">Scope</Label>
-            <SelectComponent
-              value={scope}
-              onValueChange={setScope}
-              options={[
-                { value: "local", label: "Local (this project only)" },
-                { value: "project", label: "Project (shared via .mcp.json)" },
-                { value: "user", label: "User (all projects)" },
-              ]}
+            <Input
+              id="edit-scope"
+              value={
+                scope === "local"
+                  ? "Local (this project only)"
+                  : scope === "project"
+                  ? "Project (shared via .mcp.json)"
+                  : "User (all projects)"
+              }
+              disabled
+              className="font-mono text-sm bg-muted/50"
             />
+            <p className="text-xs text-muted-foreground">
+              Scope cannot be changed after creation. To move a server to a different scope, remove it and create a new one.
+            </p>
           </div>
 
           {/* Environment Variables */}
