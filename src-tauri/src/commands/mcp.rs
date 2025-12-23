@@ -73,6 +73,8 @@ pub struct MCPServer {
     pub env: HashMap<String, String>,
     /// URL endpoint (for SSE)
     pub url: Option<String>,
+    /// HTTP headers (for SSE/HTTP)
+    pub headers: HashMap<String, String>,
     /// Configuration scope: "local", "project", or "user"
     pub scope: String,
     /// Whether the server is currently active
@@ -151,7 +153,7 @@ pub struct ImportServerResult {
 }
 
 /// Executes a claude mcp command
-fn execute_claude_mcp_command(app_handle: &AppHandle, args: Vec<&str>) -> Result<String> {
+fn execute_claude_mcp_command(app_handle: &AppHandle, args: Vec<String>) -> Result<String> {
     info!("Executing claude mcp command with args: {:?}", args);
 
     let claude_path = find_claude_binary(app_handle)?;
@@ -182,6 +184,7 @@ pub async fn mcp_add(
     env: HashMap<String, String>,
     url: Option<String>,
     scope: String,
+    headers: HashMap<String, String>,
 ) -> Result<AddServerResult, String> {
     info!("Adding MCP server: {} with transport: {}", name, transport);
 
@@ -191,38 +194,46 @@ pub async fn mcp_add(
         .map(|(key, value)| format!("{}={}", key, value))
         .collect();
 
-    let mut cmd_args = vec!["add"];
+    let mut cmd_args: Vec<String> = vec!["add".to_string()];
 
     // Add scope flag
-    cmd_args.push("-s");
-    cmd_args.push(&scope);
+    cmd_args.push("-s".to_string());
+    cmd_args.push(scope.clone());
 
     // Add transport flag for SSE
     if transport == "sse" {
-        cmd_args.push("--transport");
-        cmd_args.push("sse");
+        cmd_args.push("--transport".to_string());
+        cmd_args.push("sse".to_string());
     }
 
     // Add environment variables
     for (i, _) in env.iter().enumerate() {
-        cmd_args.push("-e");
-        cmd_args.push(&env_args[i]);
+        cmd_args.push("-e".to_string());
+        cmd_args.push(env_args[i].clone());
+    }
+
+    // Add headers for HTTP/SSE transports
+    if !headers.is_empty() && (transport == "http" || transport == "sse") {
+        for (key, value) in &headers {
+            cmd_args.push("--header".to_string());
+            cmd_args.push(format!("{}: {}", key, value));
+        }
     }
 
     // Add name
-    cmd_args.push(&name);
+    cmd_args.push(name.clone());
 
     // Add command/URL based on transport
     if transport == "stdio" {
         if let Some(cmd) = &command {
             // Add "--" separator before command to prevent argument parsing issues
             if !args.is_empty() || cmd.contains('-') {
-                cmd_args.push("--");
+                cmd_args.push("--".to_string());
             }
-            cmd_args.push(cmd);
+            cmd_args.push(cmd.clone());
             // Add arguments
             for arg in &args {
-                cmd_args.push(arg);
+                cmd_args.push(arg.clone());
             }
         } else {
             return Ok(AddServerResult {
@@ -233,7 +244,7 @@ pub async fn mcp_add(
         }
     } else if transport == "sse" {
         if let Some(url_str) = &url {
-            cmd_args.push(url_str);
+            cmd_args.push(url_str.clone());
         } else {
             return Ok(AddServerResult {
                 success: false,
@@ -268,7 +279,7 @@ pub async fn mcp_add(
 pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
     info!("Listing MCP servers");
 
-    match execute_claude_mcp_command(&app, vec!["list"]) {
+    match execute_claude_mcp_command(&app, vec!["list".to_string()]) {
         Ok(output) => {
             info!("Raw output from 'claude mcp list': {:?}", output);
             let trimmed = output.trim();
@@ -370,6 +381,7 @@ pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
                             args: vec![],
                             env: HashMap::new(),
                             url: None,
+                            headers: HashMap::new(),
                             scope: "local".to_string(),
                             is_active: false,
                             status: ServerStatus {
@@ -396,7 +408,7 @@ pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
 pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> {
     info!("Getting MCP server details for: {}", name);
 
-    match execute_claude_mcp_command(&app, vec!["get", &name]) {
+    match execute_claude_mcp_command(&app, vec!["get".to_string(), name.clone()]) {
         Ok(output) => {
             // Parse the structured text output
             let mut scope = "local".to_string();
@@ -405,6 +417,7 @@ pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> 
             let mut args = vec![];
             let env = HashMap::new();
             let mut url = None;
+            let headers = HashMap::new();
             let mut is_connected = false;
             let mut status_error: Option<String> = None;
 
@@ -454,6 +467,7 @@ pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> 
                 args,
                 env,
                 url,
+                headers,
                 scope,
                 is_active: is_connected,
                 status: ServerStatus {
@@ -478,7 +492,7 @@ pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> 
 pub async fn mcp_remove(app: AppHandle, name: String) -> Result<String, String> {
     info!("Removing MCP server: {}", name);
 
-    match execute_claude_mcp_command(&app, vec!["remove", &name]) {
+    match execute_claude_mcp_command(&app, vec!["remove".to_string(), name.clone()]) {
         Ok(output) => {
             info!("Successfully removed MCP server: {}", name);
             Ok(output.trim().to_string())
@@ -504,12 +518,11 @@ pub async fn mcp_add_json(
     );
 
     // Build command args
-    let mut cmd_args = vec!["add-json", &name, &json_config];
+    let mut cmd_args: Vec<String> = vec!["add-json".to_string(), name.clone(), json_config.clone()];
 
     // Add scope flag
-    let scope_flag = "-s";
-    cmd_args.push(scope_flag);
-    cmd_args.push(&scope);
+    cmd_args.push("-s".to_string());
+    cmd_args.push(scope.clone());
 
     match execute_claude_mcp_command(&app, cmd_args) {
         Ok(output) => {
@@ -531,158 +544,6 @@ pub async fn mcp_add_json(
     }
 }
 
-/// Imports MCP servers from Claude Desktop
-#[tauri::command]
-pub async fn mcp_add_from_claude_desktop(
-    app: AppHandle,
-    scope: String,
-) -> Result<ImportResult, String> {
-    info!(
-        "Importing MCP servers from Claude Desktop with scope: {}",
-        scope
-    );
-
-    // Get Claude Desktop config path based on platform
-    let config_path = if cfg!(target_os = "macos") {
-        dirs::home_dir()
-            .ok_or_else(|| "Could not find home directory".to_string())?
-            .join("Library")
-            .join("Application Support")
-            .join("Claude")
-            .join("claude_desktop_config.json")
-    } else if cfg!(target_os = "linux") {
-        // For WSL/Linux, check common locations
-        dirs::config_dir()
-            .ok_or_else(|| "Could not find config directory".to_string())?
-            .join("Claude")
-            .join("claude_desktop_config.json")
-    } else {
-        return Err(
-            "Import from Claude Desktop is only supported on macOS and Linux/WSL".to_string(),
-        );
-    };
-
-    // Check if config file exists
-    if !config_path.exists() {
-        return Err(
-            "Claude Desktop configuration not found. Make sure Claude Desktop is installed."
-                .to_string(),
-        );
-    }
-
-    // Read and parse the config file
-    let config_content = fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read Claude Desktop config: {}", e))?;
-
-    let config: serde_json::Value = serde_json::from_str(&config_content)
-        .map_err(|e| format!("Failed to parse Claude Desktop config: {}", e))?;
-
-    // Extract MCP servers
-    let mcp_servers = config
-        .get("mcpServers")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| "No MCP servers found in Claude Desktop config".to_string())?;
-
-    let mut imported_count = 0;
-    let mut failed_count = 0;
-    let mut server_results = Vec::new();
-
-    // Import each server using add-json
-    for (name, server_config) in mcp_servers {
-        info!("Importing server: {}", name);
-
-        // Convert Claude Desktop format to add-json format
-        let mut json_config = serde_json::Map::new();
-
-        // All Claude Desktop servers are stdio type
-        json_config.insert(
-            "type".to_string(),
-            serde_json::Value::String("stdio".to_string()),
-        );
-
-        // Add command
-        if let Some(command) = server_config.get("command").and_then(|v| v.as_str()) {
-            json_config.insert(
-                "command".to_string(),
-                serde_json::Value::String(command.to_string()),
-            );
-        } else {
-            failed_count += 1;
-            server_results.push(ImportServerResult {
-                name: name.clone(),
-                success: false,
-                error: Some("Missing command field".to_string()),
-            });
-            continue;
-        }
-
-        // Add args if present
-        if let Some(args) = server_config.get("args").and_then(|v| v.as_array()) {
-            json_config.insert("args".to_string(), args.clone().into());
-        } else {
-            json_config.insert("args".to_string(), serde_json::Value::Array(vec![]));
-        }
-
-        // Add env if present
-        if let Some(env) = server_config.get("env").and_then(|v| v.as_object()) {
-            json_config.insert("env".to_string(), env.clone().into());
-        } else {
-            json_config.insert(
-                "env".to_string(),
-                serde_json::Value::Object(serde_json::Map::new()),
-            );
-        }
-
-        // Convert to JSON string
-        let json_str = serde_json::to_string(&json_config)
-            .map_err(|e| format!("Failed to serialize config for {}: {}", name, e))?;
-
-        // Call add-json command
-        match mcp_add_json(app.clone(), name.clone(), json_str, scope.clone()).await {
-            Ok(result) => {
-                if result.success {
-                    imported_count += 1;
-                    server_results.push(ImportServerResult {
-                        name: name.clone(),
-                        success: true,
-                        error: None,
-                    });
-                    info!("Successfully imported server: {}", name);
-                } else {
-                    failed_count += 1;
-                    let error_msg = result.message.clone();
-                    server_results.push(ImportServerResult {
-                        name: name.clone(),
-                        success: false,
-                        error: Some(result.message),
-                    });
-                    error!("Failed to import server {}: {}", name, error_msg);
-                }
-            }
-            Err(e) => {
-                failed_count += 1;
-                let error_msg = e.clone();
-                server_results.push(ImportServerResult {
-                    name: name.clone(),
-                    success: false,
-                    error: Some(e),
-                });
-                error!("Error importing server {}: {}", name, error_msg);
-            }
-        }
-    }
-
-    info!(
-        "Import complete: {} imported, {} failed",
-        imported_count, failed_count
-    );
-
-    Ok(ImportResult {
-        imported_count,
-        failed_count,
-        servers: server_results,
-    })
-}
 
 /// Starts Claude Code as an MCP server
 #[tauri::command]
@@ -719,7 +580,7 @@ pub async fn mcp_test_connection(app: AppHandle, name: String) -> Result<String,
     info!("Testing connection to MCP server: {}", name);
 
     // For now, we'll use the get command to test if the server exists
-    match execute_claude_mcp_command(&app, vec!["get", &name]) {
+    match execute_claude_mcp_command(&app, vec!["get".to_string(), name.clone()]) {
         Ok(_) => Ok(format!("Connection to {} successful", name)),
         Err(e) => Err(e.to_string()),
     }
@@ -730,7 +591,7 @@ pub async fn mcp_test_connection(app: AppHandle, name: String) -> Result<String,
 pub async fn mcp_reset_project_choices(app: AppHandle) -> Result<String, String> {
     info!("Resetting MCP project choices");
 
-    match execute_claude_mcp_command(&app, vec!["reset-project-choices"]) {
+    match execute_claude_mcp_command(&app, vec!["reset-project-choices".to_string()]) {
         Ok(output) => {
             info!("Successfully reset MCP project choices");
             Ok(output.trim().to_string())
@@ -825,11 +686,12 @@ pub async fn mcp_update(
     env: HashMap<String, String>,
     url: Option<String>,
     scope: String,
+    headers: HashMap<String, String>,
 ) -> Result<AddServerResult, String> {
     info!("Updating MCP server: {} -> {}", old_name, name);
 
     // Step 1: 删除旧服务器
-    if let Err(e) = execute_claude_mcp_command(&app, vec!["remove", &old_name]) {
+    if let Err(e) = execute_claude_mcp_command(&app, vec!["remove".to_string(), old_name.clone()]) {
         error!("Failed to remove old server: {}", e);
         return Ok(AddServerResult {
             success: false,
@@ -839,7 +701,7 @@ pub async fn mcp_update(
     }
 
     // Step 2: 添加新配置
-    mcp_add(app, name, transport, command, args, env, url, scope).await
+    mcp_add(app, name, transport, command, args, env, url, scope, headers).await
 }
 
 /// Saves .mcp.json to the current project

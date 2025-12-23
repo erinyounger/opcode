@@ -356,6 +356,8 @@ export interface MCPServer {
   env: Record<string, string>;
   /** URL endpoint (for SSE) */
   url?: string;
+  /** HTTP headers (for SSE/HTTP) */
+  headers?: Record<string, string>;
   /** Configuration scope: "local", "project", or "user" */
   scope: string;
   /** Whether the server is currently active */
@@ -487,24 +489,6 @@ export interface AddServerResult {
   success: boolean;
   message: string;
   server_name?: string;
-}
-
-/**
- * Import result for multiple servers
- */
-export interface ImportResult {
-  imported_count: number;
-  failed_count: number;
-  servers: ImportServerResult[];
-}
-
-/**
- * Result for individual server import
- */
-export interface ImportServerResult {
-  name: string;
-  success: boolean;
-  error?: string;
 }
 
 /**
@@ -1513,7 +1497,8 @@ export const api = {
     args: string[] = [],
     env: Record<string, string> = {},
     url?: string,
-    scope: string = "local"
+    scope: string = "local",
+    headers: Record<string, string> = {}
   ): Promise<AddServerResult> {
     try {
       return await apiCall<AddServerResult>("mcp_add", {
@@ -1523,7 +1508,8 @@ export const api = {
         args,
         env,
         url,
-        scope
+        scope,
+        headers
       });
     } catch (error) {
       console.error("Failed to add MCP server:", error);
@@ -1581,7 +1567,8 @@ export const api = {
     args: string[] = [],
     env: Record<string, string> = {},
     url?: string,
-    scope: string = "local"
+    scope: string = "local",
+    headers: Record<string, string> = {}
   ): Promise<AddServerResult> {
     try {
       return await apiCall<AddServerResult>("mcp_update", {
@@ -1593,6 +1580,7 @@ export const api = {
         env,
         url,
         scope,
+        headers,
       });
     } catch (error) {
       console.error("Failed to update MCP server:", error);
@@ -1608,18 +1596,6 @@ export const api = {
       return await apiCall<AddServerResult>("mcp_add_json", { name, jsonConfig, scope });
     } catch (error) {
       console.error("Failed to add MCP server from JSON:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Imports MCP servers from Claude Desktop
-   */
-  async mcpAddFromClaudeDesktop(scope: string = "local"): Promise<ImportResult> {
-    try {
-      return await apiCall<ImportResult>("mcp_add_from_claude_desktop", { scope });
-    } catch (error) {
-      console.error("Failed to import from Claude Desktop:", error);
       throw error;
     }
   },

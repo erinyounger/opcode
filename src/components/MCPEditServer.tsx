@@ -63,6 +63,7 @@ export const MCPEditServer: React.FC<MCPEditServerProps> = ({
   const [url, setUrl] = useState("");
   const [scope, setScope] = useState("local");
   const [envVars, setEnvVars] = useState<EnvironmentVariable[]>([]);
+  const [headers, setHeaders] = useState<EnvironmentVariable[]>([]);
 
   // Initialize form with server data when dialog opens
   useEffect(() => {
@@ -80,6 +81,14 @@ export const MCPEditServer: React.FC<MCPEditServerProps> = ({
         value,
       }));
       setEnvVars(envArray);
+
+      // Convert headers object to array
+      const headersArray = Object.entries(server.headers || {}).map(([key, value]) => ({
+        id: `header-${Date.now()}-${Math.random()}`,
+        key,
+        value,
+      }));
+      setHeaders(headersArray);
     }
   }, [open, server]);
 
@@ -107,6 +116,32 @@ export const MCPEditServer: React.FC<MCPEditServerProps> = ({
    */
   const removeEnvVar = (id: string) => {
     setEnvVars(prev => prev.filter(v => v.id !== id));
+  };
+
+  /**
+   * Adds a new header
+   */
+  const addHeader = () => {
+    setHeaders(prev => [
+      ...prev,
+      { id: `header-${Date.now()}`, key: "", value: "" },
+    ]);
+  };
+
+  /**
+   * Updates a header
+   */
+  const updateHeader = (id: string, field: "key" | "value", value: string) => {
+    setHeaders(prev =>
+      prev.map(h => (h.id === id ? { ...h, [field]: value } : h))
+    );
+  };
+
+  /**
+   * Removes a header
+   */
+  const removeHeader = (id: string) => {
+    setHeaders(prev => prev.filter(h => h.id !== id));
   };
 
   /**
@@ -142,6 +177,14 @@ export const MCPEditServer: React.FC<MCPEditServerProps> = ({
         return acc;
       }, {} as Record<string, string>);
 
+      // Convert headers to object
+      const headersObj = headers.reduce((acc, { key, value }) => {
+        if (key.trim() && value.trim()) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {} as Record<string, string>);
+
       const result = await api.mcpUpdate(
         server.name, // oldName
         name,
@@ -150,7 +193,8 @@ export const MCPEditServer: React.FC<MCPEditServerProps> = ({
         parsedArgs,
         env,
         server.transport === "sse" ? url : undefined,
-        scope
+        scope,
+        headersObj
       );
 
       if (result.success) {
@@ -258,32 +302,51 @@ export const MCPEditServer: React.FC<MCPEditServerProps> = ({
             </div>
           )}
 
-          {/* Headers (HTTP only) */}
-          {server.transport === "http" && (
-            <div className="space-y-2">
-              <Label>Headers (Optional)</Label>
-              <div className="space-y-2">
-                {Object.entries(server.env || {}).map(([key, value]) => (
-                  <div key={key} className="flex items-center gap-2">
-                    <Input
-                      placeholder="Header Name"
-                      value={key}
-                      disabled
-                      className="flex-1 font-mono text-sm bg-muted/50"
-                    />
-                    <span className="text-muted-foreground">:</span>
-                    <Input
-                      placeholder="Header Value"
-                      value={value}
-                      disabled
-                      className="flex-1 font-mono text-sm bg-muted/50"
-                    />
-                  </div>
-                ))}
-                <p className="text-xs text-muted-foreground">
-                  Headers are stored in environment variables. Use the environment variables section below to manage them.
-                </p>
+          {/* Headers (for HTTP/SSE/WebSocket) */}
+          {(server.transport === "http" || server.transport === "sse" || server.transport === "websocket") && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">HTTP Headers</Label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={addHeader}
+                  className="gap-2"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add Header
+                </Button>
               </div>
+
+              {headers.length > 0 && (
+                <div className="space-y-2">
+                  {headers.map(header => (
+                    <div key={header.id} className="flex items-center gap-2">
+                      <Input
+                        placeholder="Header-Name"
+                        value={header.key}
+                        onChange={e => updateHeader(header.id, "key", e.target.value)}
+                        className="flex-1 font-mono text-sm"
+                      />
+                      <span className="text-muted-foreground">:</span>
+                      <Input
+                        placeholder="value"
+                        value={header.value}
+                        onChange={e => updateHeader(header.id, "value", e.target.value)}
+                        className="flex-1 font-mono text-sm"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeHeader(header.id)}
+                        className="h-8 w-8 hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

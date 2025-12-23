@@ -52,18 +52,84 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
   const [httpUrl, setHttpUrl] = useState("");
   const [httpScope, setHttpScope] = useState("local");
   const [httpEnvVars, setHttpEnvVars] = useState<EnvironmentVariable[]>([]);
+  const [httpHeaders, setHttpHeaders] = useState<EnvironmentVariable[]>([]);
 
   // SSE server state
   const [sseName, setSseName] = useState("");
   const [sseUrl, setSseUrl] = useState("");
   const [sseScope, setSseScope] = useState("local");
   const [sseEnvVars, setSseEnvVars] = useState<EnvironmentVariable[]>([]);
+  const [sseHeaders, setSseHeaders] = useState<EnvironmentVariable[]>([]);
 
   // WebSocket server state
   const [wsName, setWsName] = useState("");
   const [wsUrl, setWsUrl] = useState("");
   const [wsScope, setWsScope] = useState("local");
   const [wsEnvVars, setWsEnvVars] = useState<EnvironmentVariable[]>([]);
+  const [wsHeaders, setWsHeaders] = useState<EnvironmentVariable[]>([]);
+
+  /**
+   * Adds a new header
+   */
+  const addHeader = (type: "http" | "sse" | "websocket") => {
+    const newHeader: EnvironmentVariable = {
+      id: `header-${Date.now()}`,
+      key: "",
+      value: "",
+    };
+
+    switch (type) {
+      case "http":
+        setHttpHeaders(prev => [...prev, newHeader]);
+        break;
+      case "sse":
+        setSseHeaders(prev => [...prev, newHeader]);
+        break;
+      case "websocket":
+        setWsHeaders(prev => [...prev, newHeader]);
+        break;
+    }
+  };
+
+  /**
+   * Updates a header
+   */
+  const updateHeader = (type: "http" | "sse" | "websocket", id: string, field: "key" | "value", value: string) => {
+    switch (type) {
+      case "http":
+        setHttpHeaders(prev => prev.map(h =>
+          h.id === id ? { ...h, [field]: value } : h
+        ));
+        break;
+      case "sse":
+        setSseHeaders(prev => prev.map(h =>
+          h.id === id ? { ...h, [field]: value } : h
+        ));
+        break;
+      case "websocket":
+        setWsHeaders(prev => prev.map(h =>
+          h.id === id ? { ...h, [field]: value } : h
+        ));
+        break;
+    }
+  };
+
+  /**
+   * Removes a header
+   */
+  const removeHeader = (type: "http" | "sse" | "websocket", id: string) => {
+    switch (type) {
+      case "http":
+        setHttpHeaders(prev => prev.filter(h => h.id !== id));
+        break;
+      case "sse":
+        setSseHeaders(prev => prev.filter(h => h.id !== id));
+        break;
+      case "websocket":
+        setWsHeaders(prev => prev.filter(h => h.id !== id));
+        break;
+    }
+  };
 
   /**
    * Adds a new environment variable
@@ -218,7 +284,7 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
     
     try {
       setSaving(true);
-      
+
       // Convert env vars to object
       const env = sseEnvVars.reduce((acc, { key, value }) => {
         if (key.trim() && value.trim()) {
@@ -226,7 +292,15 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
         }
         return acc;
       }, {} as Record<string, string>);
-      
+
+      // Convert headers to object
+      const headers = sseHeaders.reduce((acc, { key, value }) => {
+        if (key.trim() && value.trim()) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {} as Record<string, string>);
+
       const result = await api.mcpAdd(
         sseName,
         "sse",
@@ -234,7 +308,8 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
         [],
         env,
         sseUrl,
-        sseScope
+        sseScope,
+        headers
       );
       
       if (result.success) {
@@ -248,6 +323,7 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
         setSseName("");
         setSseUrl("");
         setSseEnvVars([]);
+        setSseHeaders([]);
         setSseScope("local");
         onServerAdded();
       } else {
@@ -259,6 +335,58 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
     } finally {
       setSaving(false);
     }
+  };
+
+  /**
+   * Renders header inputs
+   */
+  const renderHeaders = (type: "http" | "sse" | "websocket", headers: EnvironmentVariable[]) => {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm font-medium">HTTP Headers</Label>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => addHeader(type)}
+            className="gap-2"
+          >
+            <Plus className="h-3 w-3" />
+            Add Header
+          </Button>
+        </div>
+
+        {headers.length > 0 && (
+          <div className="space-y-2">
+            {headers.map((header) => (
+              <div key={header.id} className="flex items-center gap-2">
+                <Input
+                  placeholder="Header-Name"
+                  value={header.key}
+                  onChange={(e) => updateHeader(type, header.id, "key", e.target.value)}
+                  className="flex-1 font-mono text-sm"
+                />
+                <span className="text-muted-foreground">:</span>
+                <Input
+                  placeholder="value"
+                  value={header.value}
+                  onChange={(e) => updateHeader(type, header.id, "value", e.target.value)}
+                  className="flex-1 font-mono text-sm"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeHeader(type, header.id)}
+                  className="h-8 w-8 hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   /**
@@ -330,7 +458,7 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
           </TabsTrigger>
           <TabsTrigger value="sse" className="gap-2">
             <Globe className="h-4 w-4 text-emerald-500" />
-            SSE
+            SSE|HTTP
           </TabsTrigger>
         </TabsList>
 
@@ -462,6 +590,8 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
               </div>
 
               {renderEnvVars("sse", sseEnvVars)}
+
+              {renderHeaders("sse", sseHeaders)}
             </div>
 
             <div className="pt-2">

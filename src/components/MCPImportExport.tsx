@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Download, Upload, FileText, Loader2, Info, Network, Settings2 } from "lucide-react";
+import { Upload, FileText, Loader2, Info, Network, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -24,49 +24,8 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
   onImportCompleted,
   onError,
 }) => {
-  const [importingDesktop, setImportingDesktop] = useState(false);
   const [importingJson, setImportingJson] = useState(false);
   const [importScope, setImportScope] = useState("local");
-
-  /**
-   * Imports servers from Claude Desktop
-   */
-  const handleImportFromDesktop = async () => {
-    try {
-      setImportingDesktop(true);
-      // Always use "user" scope for Claude Desktop imports (was previously "global")
-      const result = await api.mcpAddFromClaudeDesktop("user");
-      
-      // Show detailed results if available
-      if (result.servers && result.servers.length > 0) {
-        const successfulServers = result.servers.filter(s => s.success);
-        const failedServers = result.servers.filter(s => !s.success);
-        
-        if (successfulServers.length > 0) {
-          const successMessage = `Successfully imported: ${successfulServers.map(s => s.name).join(", ")}`;
-          onImportCompleted(result.imported_count, result.failed_count);
-          // Show success details
-          if (failedServers.length === 0) {
-            onError(successMessage);
-          }
-        }
-        
-        if (failedServers.length > 0) {
-          const failureDetails = failedServers
-            .map(s => `${s.name}: ${s.error || "Unknown error"}`)
-            .join("\n");
-          onError(`Failed to import some servers:\n${failureDetails}`);
-        }
-      } else {
-        onImportCompleted(result.imported_count, result.failed_count);
-      }
-    } catch (error: any) {
-      console.error("Failed to import from Claude Desktop:", error);
-      onError(error.toString() || "Failed to import from Claude Desktop");
-    } finally {
-      setImportingDesktop(false);
-    }
-  };
 
   /**
    * Handles JSON file import
@@ -97,14 +56,12 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
         for (const [name, config] of Object.entries(jsonData.mcpServers)) {
           try {
             const serverConfig = {
-              type: (config as any).type || "stdio",
+              type: "stdio",
               command: (config as any).command,
               args: (config as any).args || [],
-              env: (config as any).env || {},
-              url: (config as any).url,
-              headers: (config as any).headers
+              env: (config as any).env || {}
             };
-
+            
             const result = await api.mcpAddJson(name, JSON.stringify(serverConfig), importScope);
             if (result.success) {
               imported++;
@@ -191,40 +148,6 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
             <p className="text-xs text-muted-foreground">
               Choose where to save imported servers from JSON files
             </p>
-          </div>
-        </Card>
-
-        {/* Import from Claude Desktop */}
-        <Card className="p-4 hover:bg-accent/5 transition-colors">
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="p-2.5 bg-blue-500/10 rounded-lg">
-                <Download className="h-5 w-5 text-blue-500" />
-              </div>
-              <div className="flex-1">
-                <h4 className="text-sm font-medium">Import from Claude Desktop</h4>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Automatically imports all MCP servers from Claude Desktop. Installs to user scope (available across all projects).
-                </p>
-              </div>
-            </div>
-            <Button
-              onClick={handleImportFromDesktop}
-              disabled={importingDesktop}
-              className="w-full gap-2 bg-primary hover:bg-primary/90"
-            >
-              {importingDesktop ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Importing...
-                </>
-              ) : (
-                <>
-                  <Download className="h-4 w-4" />
-                  Import from Claude Desktop
-                </>
-              )}
-            </Button>
           </div>
         </Card>
 
