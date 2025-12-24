@@ -2278,4 +2278,30 @@ export const api = {
     }
   },
 
+  /**
+   * Gets the application version
+   * @returns Promise resolving to the version string
+   */
+  async getAppVersion(): Promise<string> {
+    try {
+      return await apiCall<string>("get_app_version");
+    } catch (error) {
+      console.error("Failed to get app version:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets detailed version information
+   * @returns Promise resolving to version info object
+   */
+  async getVersionInfo(): Promise<any> {
+    try {
+      return await apiCall<any>("get_version_info");
+    } catch (error) {
+      console.error("Failed to get version info:", error);
+      throw error;
+    }
+  },
+
 };

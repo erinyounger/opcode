@@ -2,6 +2,7 @@
 
 # Script to bump version across all files
 # Usage: ./scripts/bump-version.sh 1.0.0
+# When manually setting version, patch number is automatically reset to 0
 
 set -e
 
@@ -11,23 +12,39 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-VERSION=$1
+INPUT_VERSION=$1
 
-echo "Bumping version to $VERSION..."
+# Parse the input version
+IFS='.' read -ra VERSION_PARTS <<< "$INPUT_VERSION"
+MAJOR=${VERSION_PARTS[0]}
+MINOR=${VERSION_PARTS[1]}
+PATCH=${VERSION_PARTS[2]}
+
+# If patch is not provided or empty, set it to 0
+if [ -z "$PATCH" ]; then
+    PATCH=0
+fi
+
+# Format version with patch set to 0 (manual version change resets patch)
+VERSION="${MAJOR}.${MINOR}.0"
+
+echo "🎯 手动设置版本: $INPUT_VERSION"
+echo "🔄 自动归零 patch 版本: $VERSION"
+echo ""
 
 # Update package.json
-sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json && rm package.json.bak
+sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+rm -f package.json.bak
 
 # Update Cargo.toml
-sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml && rm src-tauri/Cargo.toml.bak
+sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+rm -f src-tauri/Cargo.toml.bak
 
 # Update tauri.conf.json
-sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json && rm src-tauri/tauri.conf.json.bak
+sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+rm -f tauri.conf.json.bak
 
-# Update Info.plist
-sed -i.bak "s/<string>.*<\/string><!-- VERSION -->/<string>$VERSION<\/string><!-- VERSION -->/" src-tauri/Info.plist && rm src-tauri/Info.plist.bak
-
-echo "✅ Version bumped to $VERSION in all files"
+echo "✅ 版本已更新到 $VERSION (patch 自动归零)"
 echo ""
 echo "Next steps:"
 echo "1. Review the changes: git diff"

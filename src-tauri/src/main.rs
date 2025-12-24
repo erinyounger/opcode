@@ -46,6 +46,7 @@ use commands::storage::{
     storage_delete_row, storage_execute_sql, storage_insert_row, storage_list_tables,
     storage_read_table, storage_reset_database, storage_update_row,
 };
+use commands::version::{get_app_version, get_version_info};
 use commands::usage::{
     get_session_stats, get_usage_by_date_range, get_usage_details, get_usage_stats,
 };
@@ -313,6 +314,9 @@ fn main() {
             skill_create_file,
             skill_read_file,
             skill_delete_file,
+            // Version Management
+            get_app_version,
+            get_version_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

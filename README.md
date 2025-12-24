@@ -381,6 +381,122 @@ The build process creates several artifacts:
 
 All artifacts are located in `src-tauri/target/release/`.
 
+## 📦 Version Management
+
+opcode uses a simplified version management system that automatically handles version synchronization and executable naming.
+
+### Version Format
+
+Versions follow [Semantic Versioning](https://semver.org/) (SemVer): `x.y.z`
+
+- **x (Major)**: Major version - incompatible API changes
+- **y (Minor)**: Minor version - backward-compatible new features
+- **z (Patch)**: Patch version - backward-compatible bug fixes (auto-increments on build)
+
+### Version Management Workflow
+
+#### Single Source of Truth
+
+The version number is managed **only in `package.json`**:
+
+```json
+{
+  "name": "opcode",
+  "version": "0.2.1",
+  ...
+}
+```
+
+#### How It Works
+
+1. **Manual Editing for x.y**: When releasing a new version, manually edit `package.json` to set the version (e.g., change `0.2.1` to `1.0.0`)
+
+2. **Sync Version**: Run the sync command to propagate the version to all configuration files:
+   ```bash
+   npm run sync:version
+   ```
+   This updates:
+   - `src-tauri/Cargo.toml` - Rust crate version
+   - `src-tauri/tauri.conf.json` - Tauri app version
+
+3. **Auto-Increment on Build**: Every build automatically increments the patch version (`z`):
+   ```bash
+   # The prebuild hook automatically:
+   # - Increments patch version (0.2.1 → 0.2.2)
+   # - Syncs version to all files
+   bun run tauri build
+
+   # Then the build continues and the post-build hook:
+   # - Renames executable with version suffix
+   # Output: opcode-v0.2.2.exe
+   ```
+
+#### Example Release Workflow
+
+**Scenario 1: Release a new minor version**
+
+```bash
+# 1. Manually edit package.json: "version": "1.5.0"
+# 2. Sync version to other files
+npm run sync:version
+
+# 3. Build (automatically increments to 1.5.1)
+bun run tauri build
+
+# Output: opcode-v1.5.1.exe
+```
+
+**Scenario 2: Quick bug fix**
+
+```bash
+# Build directly (no manual version change needed)
+bun run tauri build
+# Version automatically: 1.5.1 → 1.5.2
+# Output: opcode-v1.5.2.exe
+```
+
+### Version Display
+
+The current version is displayed in multiple places:
+
+1. **NFO Credits Window**: Click the "i" icon in the title bar
+   - Window title shows: `opcode.NFO v0.2.1`
+   - Credits header shows: `opcode v0.2.1`
+
+2. **Build Output**: Executables include version suffix
+   - `opcode-v0.2.1.exe` (Windows)
+   - `opcode-v0.2.1.AppImage` (Linux)
+   - `opcode-v0.2.1.dmg` (macOS)
+
+### Available Commands
+
+```bash
+# Sync version from package.json to all config files
+npm run sync:version
+
+# Build production version (auto-increments patch, adds version suffix)
+bun run tauri build
+
+# Build debug version (also auto-increments)
+bun run tauri build --debug
+
+# Development build (also auto-increments)
+bun run tauri dev
+```
+
+### Key Principles
+
+- ✅ **Single source**: Version only managed in `package.json`
+- ✅ **Manual x.y**: You control major and minor versions
+- ✅ **Auto z**: Patch version increments automatically on every build
+- ✅ **No auto-reset**: Patch version does NOT reset to 0 when x.y changes
+- ✅ **Manual reset**: Set z to 0 manually when needed (e.g., `2.0.0`)
+- ✅ **Automatic sync**: Version syncs to all files during build
+- ✅ **Versioned executables**: Built files include version suffix
+
+> [!NOTE]
+> The patch version (`z`) never automatically resets to zero. When you want to release `2.0.0`, manually edit `package.json` to set the version, then build. The build will increment it to `2.0.1` for the actual executable.
+
 ## 🛠️ Development
 
 ### Tech Stack

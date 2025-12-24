@@ -4,6 +4,7 @@ import { X, Volume2, VolumeX, Github } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { api } from "@/lib/api";
 import asteriskLogo from "@/assets/nfo/asterisk-logo.png";
 import keygennMusic from "@/assets/nfo/opcode-nfo.ogg";
 
@@ -26,7 +27,22 @@ export const NFOCredits: React.FC<NFOCreditsProps> = ({ onClose }) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [isMuted, setIsMuted] = useState(true); // Default to muted (no sound)
   const [scrollPosition, setScrollPosition] = useState(0);
-  
+  const [appVersion, setAppVersion] = useState<string>("0.0.0"); // Default fallback version
+
+  // Load app version on mount
+  useEffect(() => {
+    const loadVersion = async () => {
+      try {
+        const version = await api.getAppVersion();
+        setAppVersion(version);
+      } catch (error) {
+        console.error("Failed to load app version:", error);
+        // Keep default version if loading fails
+      }
+    };
+    loadVersion();
+  }, []);
+
   // Initialize audio but don't autoplay
   useEffect(() => {
     const audio = new Audio(keygennMusic);
@@ -85,7 +101,7 @@ export const NFOCredits: React.FC<NFOCreditsProps> = ({ onClose }) => {
   
   // Credits content
   const creditsContent = [
-    { type: "header", text: "opcode v0.2.1" },
+    { type: "header", text: `opcode v${appVersion}` },
     { type: "subheader", text: "[ A STRATEGIC PROJECT BY ASTERISK ]" },
     { type: "spacer" },
     { type: "section", title: "━━━ CREDITS ━━━" },
@@ -148,7 +164,7 @@ export const NFOCredits: React.FC<NFOCreditsProps> = ({ onClose }) => {
             <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border">
               <div className="flex items-center space-x-2">
                 <div className="text-sm font-bold tracking-wider font-mono text-foreground">
-                  opcode.NFO
+                  opcode.NFO <span className="text-xs text-muted-foreground">v{appVersion}</span>
                 </div>
               </div>
               <div className="flex items-center space-x-2">
