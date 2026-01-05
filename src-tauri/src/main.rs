@@ -28,7 +28,7 @@ use commands::claude::{
     list_directory_contents, list_project_files, list_projects, list_running_claude_sessions, load_session_history,
     open_new_session, read_claude_md_file, read_text_file, restore_checkpoint, resume_claude_code,
     save_claude_md_file, save_claude_settings, save_system_prompt, search_files,
-    start_file_server, track_checkpoint_message, track_session_messages, update_checkpoint_settings,
+    send_claude_message, start_file_server, track_checkpoint_message, track_session_messages, update_checkpoint_settings,
     update_hooks_config, validate_hook_command, ClaudeProcessState, FileServerState,
 };
 use commands::mcp::{
@@ -42,6 +42,7 @@ use commands::skills::{
     skill_create, skill_create_file, skill_delete, skill_delete_file, skill_list_all,
     skill_list_by_type, skill_read, skill_read_file, skill_update, skill_validate,
 };
+use commands::terminal::{execute_terminal_command, execute_terminal_command_stream};
 use commands::storage::{
     storage_delete_row, storage_execute_sql, storage_insert_row, storage_list_tables,
     storage_read_table, storage_reset_database, storage_update_row,
@@ -221,6 +222,7 @@ fn main() {
             get_recently_modified_files,
             start_file_server,
             get_file_server_url,
+            send_claude_message,
             get_hooks_config,
             update_hooks_config,
             validate_hook_command,
@@ -295,6 +297,9 @@ fn main() {
             storage_insert_row,
             storage_execute_sql,
             storage_reset_database,
+            // Terminal Commands
+            execute_terminal_command,
+            execute_terminal_command_stream,
             // Slash Commands
             commands::slash_commands::slash_commands_list,
             commands::slash_commands::slash_command_get,
