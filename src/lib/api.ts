@@ -1144,6 +1144,23 @@ export const api = {
   },
 
   /**
+   * Sends a message to Claude and returns the response (simplified API for terminal session)
+   */
+  async sendClaudeMessage(params: {
+    prompt: string;
+    model: string;
+    project_path?: string;
+    session_id?: string;
+  }): Promise<{
+    response: string;
+    session_id?: string;
+    usage?: { input_tokens: number; output_tokens: number };
+    tool_results?: Array<{ name: string; content: string; success: boolean }>;
+  }> {
+    return apiCall("send_claude_message", params);
+  },
+
+  /**
    * Lists files and directories in a given path
    */
   async listDirectoryContents(directoryPath: string): Promise<FileEntry[]> {

@@ -254,7 +254,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                           // Preserve selectedProject so we can return to session list
                           updateTab(tab.id, {
                             type: 'chat',
-                            title: session.project_path.split('/').pop() || 'Session',
+                            title: session.project_path.split('/').pop() || `Session ${session.id.slice(0, 8)}`,
                             sessionId: session.id,
                             sessionData: session,
                             initialProjectPath: session.project_path,
@@ -499,9 +499,10 @@ export const TabContent: React.FC = () => {
       } else {
         // Create new tab for this session
         const projectName = session.project_path.split('/').pop() || 'Session';
-        const newTabId = createChatTab(session.id, projectName, session.project_path);
+        const newTabId = createChatTab(undefined, projectName, session.project_path);
         // Update the new tab with session data
         updateTab(newTabId, {
+          sessionId: session.id,
           sessionData: session,
           initialProjectPath: session.project_path
         });
@@ -556,8 +557,9 @@ export const TabContent: React.FC = () => {
           });
         } else {
           const projectName = session.project_path.split('/').pop() || 'Session';
-          const newTabId = createChatTab(session.id, projectName, session.project_path);
+          const newTabId = createChatTab(undefined, projectName, session.project_path);
           updateTab(newTabId, {
+            sessionId: session.id,
             sessionData: session,
             initialProjectPath: session.project_path,
           });

@@ -780,15 +780,9 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
         }
     }
 
-    // Sort sessions by last message time (newest first) for easier finding
-    // Sessions without timestamps go to the end
+    // Sort sessions by created_at in descending order (newest first)
     sessions.sort_by(|a, b| {
-        match (&b.last_message_timestamp, &a.last_message_timestamp) {
-            (Some(b_time), Some(a_time)) => b_time.cmp(a_time),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => b.modified_at.cmp(&a.modified_at), // Fallback to file modified time
-        }
+        b.created_at.cmp(&a.created_at)
     });
 
     log::info!(
@@ -2744,6 +2738,67 @@ pub async fn get_file_server_url(app: AppHandle) -> Result<Option<String>, Strin
     let state = app.state::<FileServerState>();
     let url = state.server_url.lock().await.clone();
     Ok(url)
+}
+
+/// Simplified message sending for terminal session
+#[tauri::command]
+pub async fn send_claude_message(
+    params: serde_json::Value,
+    app: AppHandle,
+) -> Result<serde_json::Value, String> {
+    log::info!("Sending message to Claude");
+
+    let prompt = params["prompt"]
+        .as_str()
+        .ok_or("Missing prompt")?
+        .to_string();
+
+    let model = params["model"]
+        .as_str()
+        .unwrap_or("sonnet")
+        .to_string();
+
+    let project_path = params["project_path"]
+        .as_str()
+        .map(|s| s.to_string());
+
+    let session_id = params["session_id"]
+        .as_str()
+        .map(|s| s.to_string());
+
+    // Execute claude command with the prompt
+    let claude_path = find_claude_binary(&app)?;
+    let mut cmd = create_system_command(
+        &claude_path,
+        vec!["--model".to_string(), model.clone(), prompt.clone()],
+        project_path.as_deref().unwrap_or("."),
+    );
+
+    let output = cmd.output()
+        .await
+        .map_err(|e| format!("Failed to execute Claude command: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        log::error!("Claude command failed: {}", stderr);
+        return Err(stderr);
+    }
+
+    // Parse response for usage and tool results
+    let tool_results: Vec<serde_json::Value> = Vec::new(); // TODO: Parse from output
+    let usage = Some(serde_json::json!({
+        "input_tokens": prompt.len() / 4, // Rough estimate
+        "output_tokens": stdout.len() / 4,
+    }));
+
+    Ok(serde_json::json!({
+        "response": stdout,
+        "session_id": session_id,
+        "usage": usage,
+        "tool_results": tool_results,
+    }))
 }
 
 #[cfg(test)]

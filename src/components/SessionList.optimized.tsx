@@ -109,12 +109,13 @@ export const SessionList: React.FC<SessionListProps> = React.memo(({
   onEditClaudeFile,
   className
 }) => {
-  // Sort sessions by created_at in descending order
+  // Sort sessions by created_at in descending order (newest first)
   const sortedSessions = useMemo(() => {
     return [...sessions].sort((a, b) => {
       const timeA = a.created_at || 0;
       const timeB = b.created_at || 0;
-      return timeB > timeA ? 1 : -1;
+      // Sort in descending order: newest sessions first
+      return timeB - timeA;
     });
   }, [sessions]);
 
