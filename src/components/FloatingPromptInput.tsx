@@ -12,7 +12,11 @@ import {
   Lightbulb,
   Cpu,
   Rocket,
-  
+  Eye,
+  EyeOff,
+  Info,
+  ArrowRight,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -77,9 +81,9 @@ export interface FloatingPromptInputRef {
 }
 
 /**
- * Thinking mode type definition
+ * Enhanced thinking modes with visualization options
  */
-type ThinkingMode = "auto" | "think" | "think_hard" | "think_harder" | "ultrathink";
+type ThinkingMode = "off" | "on" | "verbose";
 
 /**
  * Thinking mode configuration
@@ -88,89 +92,44 @@ type ThinkingModeConfig = {
   id: ThinkingMode;
   name: string;
   description: string;
-  level: number; // 0-4 for visual indicator
   phrase?: string; // The phrase to append
   icon: React.ReactNode;
   color: string;
   shortName: string;
+  showThinking?: boolean; // Whether to show thinking process in response
 };
 
 const THINKING_MODES: ThinkingModeConfig[] = [
   {
-    id: "auto",
-    name: "Auto",
-    description: "Let Claude decide",
-    level: 0,
+    id: "off",
+    name: "Off",
+    description: "No thinking mode",
     icon: <Sparkles className="h-3.5 w-3.5" />,
     color: "text-muted-foreground",
-    shortName: "A"
+    shortName: "—",
+    showThinking: false
   },
   {
-    id: "think",
+    id: "on",
     name: "Think",
-    description: "Basic reasoning",
-    level: 1,
+    description: "Enable thinking mode with hidden process",
     phrase: "think",
     icon: <Lightbulb className="h-3.5 w-3.5" />,
     color: "text-primary",
-    shortName: "T"
+    shortName: "⚡",
+    showThinking: false
   },
   {
-    id: "think_hard",
-    name: "Think Hard",
-    description: "Deeper analysis",
-    level: 2,
-    phrase: "think hard",
+    id: "verbose",
+    name: "Deep Think",
+    description: "Enable detailed thinking with visible process",
+    phrase: "think thoroughly and show your reasoning",
     icon: <Brain className="h-3.5 w-3.5" />,
-    color: "text-primary",
-    shortName: "T+"
-  },
-  {
-    id: "think_harder",
-    name: "Think Harder",
-    description: "Extensive reasoning",
-    level: 3,
-    phrase: "think harder",
-    icon: <Cpu className="h-3.5 w-3.5" />,
-    color: "text-primary",
-    shortName: "T++"
-  },
-  {
-    id: "ultrathink",
-    name: "Ultrathink",
-    description: "Maximum computation",
-    level: 4,
-    phrase: "ultrathink",
-    icon: <Rocket className="h-3.5 w-3.5" />,
-    color: "text-primary",
-    shortName: "Ultra"
+    color: "text-purple-600 dark:text-purple-400",
+    shortName: "🧠",
+    showThinking: true
   }
 ];
-
-/**
- * ThinkingModeIndicator component - Shows visual indicator bars for thinking level
- */
-const ThinkingModeIndicator: React.FC<{ level: number; color?: string }> = ({ level, color: _color }) => {
-  const getBarColor = (barIndex: number) => {
-    if (barIndex > level) return "bg-muted";
-    return "bg-primary";
-  };
-  
-  return (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4].map((i) => (
-        <div
-          key={i}
-          className={cn(
-            "w-1 h-3 rounded-full transition-all duration-200",
-            getBarColor(i),
-            i <= level && "shadow-sm"
-          )}
-        />
-      ))}
-    </div>
-  );
-};
 
 type Model = {
   id: "sonnet" | "opus";
@@ -184,16 +143,16 @@ type Model = {
 const MODELS: Model[] = [
   {
     id: "sonnet",
-    name: "Claude 4 Sonnet",
-    description: "Faster, efficient for most tasks",
+    name: "Claude Sonnet",
+    description: "Fast & efficient",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "S",
     color: "text-primary"
   },
   {
     id: "opus",
-    name: "Claude 4 Opus",
-    description: "More capable, better for complex tasks",
+    name: "Claude Opus",
+    description: "More capable",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "O",
     color: "text-primary"
@@ -226,7 +185,7 @@ const FloatingPromptInputInner = (
 ) => {
   const [prompt, setPrompt] = useState("");
   const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">(defaultModel);
-  const [selectedThinkingMode, setSelectedThinkingMode] = useState<ThinkingMode>("auto");
+  const [selectedThinkingMode, setSelectedThinkingMode] = useState<ThinkingMode>("off");
   const [isExpanded, setIsExpanded] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [thinkingModePickerOpen, setThinkingModePickerOpen] = useState(false);
@@ -700,10 +659,10 @@ const FloatingPromptInputInner = (
     if (prompt.trim() && !disabled) {
       let finalPrompt = prompt.trim();
 
-      // Append thinking phrase if not auto mode
+      // Append thinking phrase if enabled
       const thinkingMode = THINKING_MODES.find(m => m.id === selectedThinkingMode);
       if (thinkingMode && thinkingMode.phrase) {
-        finalPrompt = `${finalPrompt}.\n\n${thinkingMode.phrase}.`;
+        finalPrompt = `${finalPrompt}\n\n${thinkingMode.phrase}`;
       }
 
       onSend(finalPrompt, selectedModel);
@@ -981,13 +940,10 @@ const FloatingPromptInputInner = (
                                 <span className={THINKING_MODES.find(m => m.id === selectedThinkingMode)?.color}>
                                   {THINKING_MODES.find(m => m.id === selectedThinkingMode)?.icon}
                                 </span>
-                                <ThinkingModeIndicator 
-                                  level={THINKING_MODES.find(m => m.id === selectedThinkingMode)?.level || 0} 
-                                />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p className="font-medium">{THINKING_MODES.find(m => m.id === selectedThinkingMode)?.name || "Auto"}</p>
+                              <p className="font-medium">{THINKING_MODES.find(m => m.id === selectedThinkingMode)?.name || "Off"}</p>
                               <p className="text-xs text-muted-foreground">{THINKING_MODES.find(m => m.id === selectedThinkingMode)?.description}</p>
                             </TooltipContent>
                           </Tooltip>
@@ -1018,7 +974,6 @@ const FloatingPromptInputInner = (
                                   {mode.description}
                                 </div>
                               </div>
-                              <ThinkingModeIndicator level={mode.level} />
                             </button>
                           ))}
                         </div>
@@ -1173,13 +1128,13 @@ const FloatingPromptInputInner = (
                           </motion.div>
                         </TooltipTrigger>
                         <TooltipContent side="top">
-                          <p className="text-xs font-medium">Thinking: {THINKING_MODES.find(m => m.id === selectedThinkingMode)?.name || "Auto"}</p>
+                          <p className="text-xs font-medium">{THINKING_MODES.find(m => m.id === selectedThinkingMode)?.name || "Off"}</p>
                           <p className="text-xs text-muted-foreground">{THINKING_MODES.find(m => m.id === selectedThinkingMode)?.description}</p>
                         </TooltipContent>
                       </Tooltip>
                   }
                 content={
-                  <div className="w-[280px] p-1">
+                  <div className="w-[220px] p-1">
                     {THINKING_MODES.map((mode) => (
                       <button
                         key={mode.id}
@@ -1188,7 +1143,7 @@ const FloatingPromptInputInner = (
                           setThinkingModePickerOpen(false);
                         }}
                         className={cn(
-                          "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
+                          "w-full flex items-start gap-3 p-2.5 rounded-md transition-colors text-left",
                           "hover:bg-accent",
                           selectedThinkingMode === mode.id && "bg-accent"
                         )}
@@ -1196,7 +1151,7 @@ const FloatingPromptInputInner = (
                         <span className={cn("mt-0.5", mode.color)}>
                           {mode.icon}
                         </span>
-                        <div className="flex-1 space-y-1">
+                        <div className="flex-1 space-y-0.5">
                           <div className="font-medium text-sm">
                             {mode.name}
                           </div>
@@ -1204,7 +1159,6 @@ const FloatingPromptInputInner = (
                             {mode.description}
                           </div>
                         </div>
-                        <ThinkingModeIndicator level={mode.level} />
                       </button>
                     ))}
                   </div>
@@ -1230,11 +1184,11 @@ const FloatingPromptInputInner = (
                   placeholder={
                     dragActive
                       ? "Drop images here..."
-                      : "Message Claude (@ for files, / for commands)..."
+                      : "Message Claude... (@ for files, / for commands)"
                   }
                   disabled={disabled}
                   className={cn(
-                    "resize-none pr-20 pl-3 py-2.5 transition-all duration-150",
+                    "resize-none pr-16 pl-3 py-2.5 transition-all duration-150",
                     dragActive && "border-primary",
                     textareaHeight >= 240 && "overflow-y-auto scrollbar-thin"
                   )}
@@ -1246,24 +1200,7 @@ const FloatingPromptInputInner = (
 
                 {/* Action buttons inside input - fixed at bottom right */}
                 <div className="absolute right-1.5 bottom-1.5 flex items-center gap-0.5">
-                  <TooltipSimple content="Expand (Ctrl+Shift+E)" side="top">
-                    <motion.div
-                      whileTap={{ scale: 0.97 }}
-                      transition={{ duration: 0.15 }}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setIsExpanded(true)}
-                        disabled={disabled}
-                        className="h-8 w-8 hover:bg-accent/50 transition-colors"
-                      >
-                        <Maximize2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </motion.div>
-                  </TooltipSimple>
-
-                  <TooltipSimple content={isLoading ? "Stop generation" : "Send message (Enter)"} side="top">
+                  <TooltipSimple content={isLoading ? "Stop generation" : "Send (Enter)"} side="top">
                     <motion.div
                       whileTap={{ scale: 0.97 }}
                       transition={{ duration: 0.15 }}

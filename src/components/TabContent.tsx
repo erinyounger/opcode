@@ -9,16 +9,18 @@ import { ProjectList } from '@/components/ProjectList';
 import { SessionList } from '@/components/SessionList';
 import { Button } from '@/components/ui/button';
 
+// Import components
+import { Settings } from '@/components/Settings';
+import { UsageDashboard } from '@/components/UsageDashboard';
+import { MCPManager } from '@/components/MCPManager';
+import { MarkdownEditor } from '@/components/MarkdownEditor';
+import { CreateAgent } from '@/components/CreateAgent';
+import { AgentExecution } from '@/components/AgentExecution';
+
 // Lazy load heavy components
 const ClaudeCodeSession = lazy(() => import('@/components/ClaudeCodeSession').then(m => ({ default: m.ClaudeCodeSession })));
 const AgentRunOutputViewer = lazy(() => import('@/components/AgentRunOutputViewer'));
-const AgentExecution = lazy(() => import('@/components/AgentExecution').then(m => ({ default: m.AgentExecution })));
-const CreateAgent = lazy(() => import('@/components/CreateAgent').then(m => ({ default: m.CreateAgent })));
 const Agents = lazy(() => import('@/components/Agents').then(m => ({ default: m.Agents })));
-const UsageDashboard = lazy(() => import('@/components/UsageDashboard').then(m => ({ default: m.UsageDashboard })));
-const MCPManager = lazy(() => import('@/components/MCPManager').then(m => ({ default: m.MCPManager })));
-const Settings = lazy(() => import('@/components/Settings').then(m => ({ default: m.Settings })));
-const MarkdownEditor = lazy(() => import('@/components/MarkdownEditor').then(m => ({ default: m.MarkdownEditor })));
 // const ClaudeFileEditor = lazy(() => import('@/components/ClaudeFileEditor').then(m => ({ default: m.ClaudeFileEditor })));
 
 // Import non-lazy components for projects view

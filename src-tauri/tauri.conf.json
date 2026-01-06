@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "opcode",
-  "version": "0.2.2",
+  "version": "0.2.31",
   "identifier": "opcode.asterisk.so",
   "build": {
     "beforeDevCommand": "",
@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "opcode",
-        "width": 800,
-        "height": 600,
+        "width": 980,
+        "height": 700,
         "decorations": false,
         "transparent": true,
         "shadow": true,

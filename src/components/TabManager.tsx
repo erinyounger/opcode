@@ -64,16 +64,16 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       value={tab}
       id={tab.id}
       dragListener={true}
-      transition={{ duration: 0.1 }} // Snappy reorder animation
+      transition={{ duration: 0.15 }}
       className={cn(
         "relative flex items-center gap-2 text-sm cursor-pointer select-none group",
-        "transition-colors duration-100 overflow-hidden border-r border-border/20",
-        "before:absolute before:bottom-0 before:left-0 before:right-0 before:h-0.5 before:transition-colors before:duration-100",
+        "transition-all duration-200 overflow-hidden border-r border-border/30",
+        "before:absolute before:bottom-0 before:left-0 before:right-0 before:h-0.5 before:transition-colors before:duration-200",
         isActive
-          ? "bg-card text-card-foreground before:bg-primary"
-          : "bg-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground before:bg-transparent",
-        isDragging && "bg-card border-primary/50 shadow-sm z-50",
-        "min-w-[120px] max-w-[220px] h-8 px-3"
+          ? "bg-card text-card-foreground before:bg-primary shadow-md"
+          : "bg-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground before:bg-transparent",
+        isDragging && "bg-card border-primary/50 shadow-2xl z-50 scale-105",
+        "min-w-[100px] max-w-[160px] h-9 px-3 hover:shadow-sm"
       )}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -83,29 +83,28 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
     >
       {/* Tab Icon */}
       <div className="flex-shrink-0">
-        <Icon className="w-4 h-4" />
+        <Icon className="w-4 h-4 transition-transform duration-200 group-hover:scale-110" />
       </div>
-      
-      {/* Tab Title */}
-      <span className="flex-1 truncate text-xs font-medium min-w-0">
+
+      {/* Tab Title - truncated with ellipsis */}
+      <span className="flex-1 truncate text-xs font-medium min-w-0" title={tab.title}>
         {tab.title}
       </span>
 
-      {/* Status Indicators - always takes up space */}
-      <div className="flex items-center gap-1.5 flex-shrink-0 w-6 justify-end">
-        {statusIcon && (
-          <span className="flex items-center justify-center">
-            {statusIcon}
-          </span>
-        )}
+      {/* Status Indicators - only show on hover or active */}
+      {(isHovered || isActive) && statusIcon && (
+        <span className="flex items-center justify-center flex-shrink-0">
+          {statusIcon}
+        </span>
+      )}
 
-        {tab.hasUnsavedChanges && !statusIcon && (
-          <span 
-            className="w-1.5 h-1.5 bg-primary rounded-full"
-            title="Unsaved changes"
-          />
-        )}
-      </div>
+      {/* Unsaved changes indicator - only show on hover or active */}
+      {(isHovered || isActive) && tab.hasUnsavedChanges && !statusIcon && (
+        <span
+          className="w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0 animate-pulse"
+          title="Unsaved changes"
+        />
+      )}
 
       {/* Close Button - Always reserves space */}
       <button
@@ -114,9 +113,9 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
           onClose(tab.id);
         }}
         className={cn(
-          "flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-sm",
-          "transition-all duration-100 hover:bg-destructive/20 hover:text-destructive",
-          "focus:outline-none focus:ring-1 focus:ring-destructive/50",
+          "flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-md",
+          "transition-all duration-200 hover:bg-destructive/30 hover:text-destructive hover:scale-110",
+          "focus:outline-none focus:ring-2 focus:ring-destructive/50",
           (isHovered || isActive) ? "opacity-100" : "opacity-0"
         )}
         title={`Close ${tab.title}`}
@@ -301,28 +300,28 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   };
 
   return (
-    <div className={cn("flex items-stretch bg-muted/15 relative border-b border-border/50", className)}>
+    <div className={cn("flex items-stretch bg-background/80 backdrop-blur-sm relative border-b border-border/30", className)}>
       {/* Left fade gradient */}
       {showLeftScroll && (
-        <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-muted/15 to-transparent pointer-events-none z-10" />
+        <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-background to-transparent pointer-events-none z-10" />
       )}
-      
+
       {/* Left scroll button */}
       <AnimatePresence>
         {showLeftScroll && (
           <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
             onClick={() => scrollTabs('left')}
             className={cn(
-              "p-1.5 hover:bg-muted/80 rounded-sm z-20 ml-1",
-              "transition-colors duration-200 flex items-center justify-center",
-              "bg-background/80 backdrop-blur-sm shadow-sm border border-border/50"
+              "p-2 hover:bg-accent/60 rounded-lg z-20 ml-1",
+              "transition-all duration-200 flex items-center justify-center",
+              "glass-card shadow-md hover:shadow-lg hover:-translate-y-0.5"
             )}
             title="Scroll tabs left"
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M15 18l-6-6 6-6" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </motion.button>
@@ -335,7 +334,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
         className="flex-1 flex overflow-x-auto scrollbar-hide"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        <div className="flex items-stretch h-8">
+        <div className="flex items-stretch h-9">
           <Reorder.Group
             axis="x"
             values={tabs}
@@ -355,48 +354,48 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
               />
             ))}
           </Reorder.Group>
-          
+
           {/* New tab button - positioned right after tabs */}
           <motion.button
             onClick={handleNewTab}
             disabled={!canAddTab()}
-            whileTap={canAddTab() ? { scale: 0.97 } : {}}
+            whileTap={canAddTab() ? { scale: 0.95 } : {}}
             transition={{ duration: 0.15 }}
             className={cn(
-              "px-2 mx-1 rounded-md flex items-center justify-center flex-shrink-0",
-              "bg-background/50 backdrop-blur-sm h-8",
+              "px-3 mx-1 rounded-lg flex items-center justify-center flex-shrink-0",
+              "glass-card h-8 transition-all duration-200",
               canAddTab()
-                ? "hover:bg-muted/60 text-muted-foreground hover:text-foreground"
+                ? "hover:bg-accent/60 text-muted-foreground hover:text-foreground hover:shadow-md hover:-translate-y-0.5"
                 : "opacity-50 cursor-not-allowed text-muted-foreground"
             )}
             title={canAddTab() ? "New project (Ctrl+T)" : "Maximum tabs reached"}
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 transition-transform duration-200 hover:scale-110" />
           </motion.button>
         </div>
       </div>
 
       {/* Right fade gradient */}
       {showRightScroll && (
-        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-muted/15 to-transparent pointer-events-none z-10" />
+        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent pointer-events-none z-10" />
       )}
 
       {/* Right scroll button */}
       <AnimatePresence>
         {showRightScroll && (
           <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
             onClick={() => scrollTabs('right')}
             className={cn(
-              "p-1.5 hover:bg-muted/80 rounded-sm z-20 mr-1",
-              "transition-colors duration-200 flex items-center justify-center",
-              "bg-background/80 backdrop-blur-sm shadow-sm border border-border/50"
+              "p-2 hover:bg-accent/60 rounded-lg z-20 mr-1",
+              "transition-all duration-200 flex items-center justify-center",
+              "glass-card shadow-md hover:shadow-lg hover:-translate-y-0.5"
             )}
             title="Scroll tabs right"
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M9 18l6-6-6-6" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </motion.button>

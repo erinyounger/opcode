@@ -236,58 +236,78 @@ function AppContent() {
     switch (view) {
       case "welcome":
         return (
-          <div className="flex items-center justify-center p-4" style={{ height: "100%" }}>
-            <div className="w-full max-w-4xl">
-              {/* Welcome Header */}
+          <div className="flex items-center justify-center p-8" style={{ height: "100%" }}>
+            <div className="w-full max-w-3xl">
+              {/* Welcome Header - Terminal Style */}
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.15 }}
-                className="mb-12 text-center"
+                transition={{ duration: 0.2 }}
+                className="mb-10"
               >
-                <h1 className="text-4xl font-bold tracking-tight">
-                  <span className="rotating-symbol"></span>
-                  Welcome to opcode
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-3 w-3 rounded-full bg-red-500"></div>
+                  <div className="h-3 w-3 rounded-full bg-yellow-500"></div>
+                  <div className="h-3 w-3 rounded-full bg-green-500"></div>
+                </div>
+                <h1 className="text-2xl font-mono tracking-tight text-foreground">
+                  <span className="text-primary">$</span> Welcome to Claude Code
                 </h1>
+                <p className="text-sm text-muted-foreground mt-2 font-mono">
+                  AI-powered development assistant
+                </p>
               </motion.div>
 
-              {/* Navigation Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
-                {/* CC Agents Card */}
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.15, delay: 0.05 }}
+              {/* Quick Actions - Terminal Style */}
+              <div className="space-y-3 max-w-xl">
+                <motion.button
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.2, delay: 0.05 }}
+                  onClick={() => handleViewChange("cc-agents")}
+                  className="w-full group"
                 >
-                  <Card 
-                    className="h-64 cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg border border-border/50 shimmer-hover trailing-border"
-                    onClick={() => handleViewChange("cc-agents")}
-                  >
-                    <div className="h-full flex flex-col items-center justify-center p-8">
-                      <Bot className="h-16 w-16 mb-4 text-primary" />
-                      <h2 className="text-xl font-semibold">CC Agents</h2>
+                  <div className="flex items-center gap-4 p-4 rounded-lg border border-border bg-background hover:bg-accent/50 transition-all duration-200 group-hover:border-primary/50">
+                    <Bot className="h-5 w-5 text-primary" />
+                    <div className="flex-1 text-left">
+                      <div className="font-medium text-sm">Agents</div>
+                      <div className="text-xs text-muted-foreground">Custom AI agents for specific tasks</div>
                     </div>
-                  </Card>
-                </motion.div>
+                    <span className="text-xs text-muted-foreground font-mono">›</span>
+                  </div>
+                </motion.button>
 
-                {/* Projects Card */}
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.15, delay: 0.1 }}
+                <motion.button
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.2, delay: 0.1 }}
+                  onClick={() => handleViewChange("projects")}
+                  className="w-full group"
                 >
-                  <Card 
-                    className="h-64 cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg border border-border/50 shimmer-hover trailing-border"
-                    onClick={() => handleViewChange("projects")}
-                  >
-                    <div className="h-full flex flex-col items-center justify-center p-8">
-                      <FolderCode className="h-16 w-16 mb-4 text-primary" />
-                      <h2 className="text-xl font-semibold">Projects</h2>
+                  <div className="flex items-center gap-4 p-4 rounded-lg border border-border bg-background hover:bg-accent/50 transition-all duration-200 group-hover:border-primary/50">
+                    <FolderCode className="h-5 w-5 text-primary" />
+                    <div className="flex-1 text-left">
+                      <div className="font-medium text-sm">Projects</div>
+                      <div className="text-xs text-muted-foreground">Browse and manage your projects</div>
                     </div>
-                  </Card>
-                </motion.div>
-
+                    <span className="text-xs text-muted-foreground font-mono">›</span>
+                  </div>
+                </motion.button>
               </div>
+
+              {/* Terminal Prompt */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3, delay: 0.3 }}
+                className="mt-8 font-mono text-xs text-muted-foreground"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-primary">$</span>
+                  <span>Ready to assist with your development tasks</span>
+                  <div className="inline-block w-2 h-4 bg-primary animate-pulse ml-1"></div>
+                </div>
+              </motion.div>
             </div>
           </div>
         );

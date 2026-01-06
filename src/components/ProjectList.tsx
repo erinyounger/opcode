@@ -124,13 +124,13 @@ export const ProjectList: React.FC<ProjectListProps> = ({
               </p>
             </div>
             <motion.div
-              whileTap={{ scale: 0.97 }}
+              whileTap={{ scale: 0.95 }}
               transition={{ duration: 0.15 }}
             >
               <Button
                 onClick={onOpenProject}
                 size="default"
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 shadow-md hover:shadow-lg hover:-translate-y-0.5"
               >
                 <FolderOpen className="h-4 w-4" />
                 Open Project
@@ -179,12 +179,12 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   onClick={() => onProjectClick(project)}
                   whileTap={{ scale: 0.97 }}
                   transition={{ duration: 0.15 }}
-                  className="w-full text-left px-3 py-2 rounded-md hover:bg-accent/50 transition-colors flex items-center justify-between"
+                  className="w-full text-left px-4 py-3 rounded-xl hover:bg-accent/60 transition-all duration-200 flex items-center justify-between hover:shadow-md hover:-translate-y-0.5 group"
                 >
-                  <span className="text-body-small font-medium">
+                  <span className="text-body font-medium group-hover:text-foreground transition-colors">
                     {getProjectName(project.path)}
                   </span>
-                  <span className="text-caption text-muted-foreground font-mono text-right" style={{ minWidth: '200px' }}>
+                  <span className="text-caption text-muted-foreground font-mono text-right hover:text-muted-foreground/80 transition-colors" style={{ minWidth: '200px' }}>
                     {getDisplayPath(project.path, 35)}
                   </span>
                 </motion.button>
@@ -241,28 +241,154 @@ export const ProjectList: React.FC<ProjectListProps> = ({
             </Card>
           ) : (
             <Card className="p-12">
-              <div className="flex flex-col items-center justify-center text-center">
-                <div className="w-16 h-16 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                  <FolderOpen className="h-8 w-8 text-primary" />
-                </div>
-                <h3 className="text-heading-3 mb-2">No recent projects</h3>
-                <p className="text-body-small text-muted-foreground mb-6">
-                  Open a project to get started with Claude Code
-                </p>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+                className="flex flex-col items-center justify-center text-center"
+              >
+                {/* Animated Icon */}
                 <motion.div
-                  whileTap={{ scale: 0.97 }}
-                  transition={{ duration: 0.15 }}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 200,
+                    damping: 15,
+                    delay: 0.1
+                  }}
+                  className="relative"
                 >
-                  <Button
-                    onClick={onOpenProject}
-                    size="default"
-                    className="flex items-center gap-2"
+                  {/* Background glow */}
+                  <motion.div
+                    animate={{
+                      scale: [1, 1.1, 1],
+                      opacity: [0.2, 0.4, 0.2],
+                    }}
+                    transition={{
+                      duration: 2,
+                      repeat: Infinity,
+                      ease: "easeInOut"
+                    }}
+                    className="absolute inset-0 bg-primary/20 rounded-full blur-xl"
+                  />
+
+                  {/* Icon container */}
+                  <div className="relative h-20 w-20 bg-gradient-to-br from-primary/20 to-primary/5 rounded-2xl flex items-center justify-center border border-primary/20 backdrop-blur-sm">
+                    <motion.div
+                      animate={{
+                        rotate: [0, 360],
+                      }}
+                      transition={{
+                        duration: 20,
+                        repeat: Infinity,
+                        ease: "linear"
+                      }}
+                    >
+                      <FolderOpen className="h-10 w-10 text-primary" />
+                    </motion.div>
+                  </div>
+
+                  {/* Floating dots */}
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.3 }}
+                    className="absolute -top-1 -right-1"
                   >
-                    <FolderOpen className="h-4 w-4" />
-                    Open Your First Project
-                  </Button>
+                    <motion.div
+                      animate={{
+                        y: [-3, 3, -3],
+                        rotate: [0, 180, 360],
+                      }}
+                      transition={{
+                        duration: 2.5,
+                        repeat: Infinity,
+                        ease: "easeInOut"
+                      }}
+                    >
+                      <div className="h-2 w-2 rounded-full bg-primary/40" />
+                    </motion.div>
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.4 }}
+                    className="absolute -bottom-1 -left-1"
+                  >
+                    <motion.div
+                      animate={{
+                        y: [3, -3, 3],
+                        rotate: [360, 180, 0],
+                      }}
+                      transition={{
+                        duration: 2.5,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                        delay: 0.5
+                      }}
+                    >
+                      <div className="h-2 w-2 rounded-full bg-primary/40" />
+                    </motion.div>
+                  </motion.div>
                 </motion.div>
-              </div>
+
+                {/* Content */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="mt-6 space-y-3"
+                >
+                  <h3 className="text-xl font-semibold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                    Welcome to Claude Code
+                  </h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed max-w-sm">
+                    Start your AI-powered development journey by opening your first project
+                  </p>
+                </motion.div>
+
+                {/* Action Button */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className="mt-6"
+                >
+                  <motion.div
+                    whileTap={{ scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <Button
+                      onClick={onOpenProject}
+                      size="default"
+                      className="flex items-center gap-2 px-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-1"
+                    >
+                      <FolderOpen className="h-5 w-5" />
+                      Open Your First Project
+                    </Button>
+                  </motion.div>
+                </motion.div>
+
+                {/* Tips */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="mt-8 flex items-center gap-4 text-xs text-muted-foreground/70"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-pulse" />
+                    <span>Organize your work</span>
+                  </div>
+                  <div className="h-3 w-px bg-border/50" />
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-pulse" style={{ animationDelay: '0.5s' }} />
+                    <span>AI assistance</span>
+                  </div>
+                </motion.div>
+              </motion.div>
             </Card>
           )}
         </div>
