@@ -2636,20 +2636,28 @@ pub async fn start_file_server(
     // Check if server is already running for this project
     let state = app.state::<FileServerState>();
     let current_project = state.project_path.lock().await.clone();
-    
+
+    // Always restart server when starting for a new project to avoid path conflicts
+    // This ensures the server serves the correct project files
     if let Some(ref current) = current_project {
         if *current == project_path {
-            // Server already running for this project
-            let url = state.server_url.lock().await.clone();
-            let port = state.port.lock().await;
-            if let (Some(url), Some(port)) = (url, *port) {
-                return Ok(serde_json::json!({
-                    "url": url,
-                    "port": port,
-                    "already_running": true
-                }));
-            }
+            // Server already running for this project - but we restart it anyway to be safe
+            log::info!("Server already running for project, restarting to ensure consistency");
+        } else {
+            log::info!("Switching to new project, restarting server");
         }
+    }
+
+    // Clear previous server state before starting new server
+    {
+        let mut url_guard = state.server_url.lock().await;
+        *url_guard = None;
+
+        let mut path_guard = state.project_path.lock().await;
+        *path_guard = None;
+
+        let mut port_guard = state.port.lock().await;
+        *port_guard = None;
     }
 
     // Validate project path
@@ -2728,7 +2736,8 @@ pub async fn start_file_server(
     Ok(serde_json::json!({
         "url": server_url,
         "port": actual_port,
-        "already_running": false
+        "already_running": false,
+        "fresh_start": true
     }))
 }
 

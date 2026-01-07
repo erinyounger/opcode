@@ -264,6 +264,8 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   // Load files on mount and when project path changes
   useEffect(() => {
     if (projectPath) {
+      // Clear server URL when switching projects
+      setServerUrl(null);
       loadFiles();
       checkServerStatus();
       // Auto-expand root directory
@@ -271,13 +273,18 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
     }
   }, [projectPath]);
 
-  // Check if server is already running
+  // Check if server is already running for this project
   const checkServerStatus = async () => {
     try {
       const url = await api.getFileServerUrl();
-      setServerUrl(url);
+      // Only set if we get a valid URL
+      if (url) {
+        setServerUrl(url);
+      }
     } catch (err) {
-      console.error("Failed to check server status:", err);
+      // Server not running, which is fine - we'll start it when needed
+      console.log("Server not running, will start when needed:", err);
+      setServerUrl(null);
     }
   };
 
@@ -322,38 +329,37 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
     try {
       if (isHtml) {
         // Handle HTML files - open in system browser via HTTP server
-        // Ensure server is running
-        let url = serverUrl;
-        if (!url) {
-          const serverInfo = await api.startFileServer(projectPath);
-          url = serverInfo.url;
-          setServerUrl(url);
-        }
+        // Always start a fresh server for the current project to avoid 404 errors
+        console.log("Starting fresh file server for project:", projectPath);
+        const serverInfo = await api.startFileServer(projectPath);
+        const url = serverInfo.url;
+        setServerUrl(url);
 
         // Construct preview URL
         // Normalize path: convert backslashes to forward slashes
         let normalizedPath = file.path.replace(/\\/g, '/');
-        
+
         // Remove leading slash if present (ServeDir expects relative paths)
         if (normalizedPath.startsWith('/')) {
           normalizedPath = normalizedPath.substring(1);
         }
-        
+
         // Ensure path is not empty
         if (!normalizedPath || normalizedPath.trim() === '') {
           setError("File path is empty");
           return;
         }
-        
+
         // URL encode the path (but preserve slashes)
         const encodedPath = normalizedPath
           .split('/')
           .map(segment => segment ? encodeURIComponent(segment) : '')
           .filter(segment => segment !== '') // Remove empty segments
           .join('/');
-        
+
         const previewUrl = `${url}/${encodedPath}`;
-        
+        console.log("Opening preview URL:", previewUrl);
+
         // Open in system browser (Chrome, etc.)
         await open(previewUrl);
       } else if (isTextFile) {
@@ -362,7 +368,13 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
       }
     } catch (err) {
       console.error("Failed to open file:", err);
-      setError(`Failed to open file: ${err instanceof Error ? err.message : String(err)}`);
+      let errorMessage = `Failed to open file`;
+      if (err instanceof Error) {
+        errorMessage += `: ${err.message}`;
+      } else {
+        errorMessage += `: ${String(err)}`;
+      }
+      setError(errorMessage);
     }
   };
 
