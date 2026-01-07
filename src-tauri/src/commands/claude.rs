@@ -2699,9 +2699,10 @@ pub async fn start_file_server(
         .allow_headers(Any);
 
     // Create ServeDir with proper configuration
-    // ServeDir automatically handles URL decoding and path resolution
-    let serve_dir = ServeDir::new(&canonical_path);
-    
+    // ServeDir will serve all files from the project directory at the same port
+    let serve_dir = ServeDir::new(&canonical_path)
+        .append_index_html_on_directories(false); // Don't append index.html to directories
+
     let app_router = Router::new()
         .fallback_service(serve_dir)
         .layer(cors);

@@ -1724,9 +1724,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               className="fixed right-0 top-0 h-full w-full sm:w-96 bg-background border-l border-border shadow-xl z-30 overflow-hidden"
             >
               <div className="h-full flex flex-col">
-                {/* File Browser Header */}
+                {/* File Browser Header - Removed duplicate title, FileBrowser has its own */}
                 <div className="flex items-center justify-between p-4 border-b border-border">
-                  <h3 className="text-lg font-semibold">Project Files</h3>
+                  <div /> {/* Spacer for alignment */}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1736,7 +1736,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
-                
+
                 {/* File Browser Content */}
                 <div className="flex-1 overflow-hidden">
                   <FileBrowser
