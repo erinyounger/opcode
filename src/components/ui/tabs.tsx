@@ -65,7 +65,7 @@ const TabsList = React.forwardRef<HTMLDivElement, TabsListProps>(
     <div
       ref={ref}
       className={cn(
-        "flex h-9 items-center justify-start rounded-lg p-1",
+        "flex h-10 items-center justify-start rounded-xl p-1.5 shadow-inner",
         className
       )}
       style={{
@@ -105,14 +105,17 @@ const TabsTrigger = React.forwardRef<
       disabled={disabled}
       onClick={() => onValueChange(value)}
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-all",
-        "disabled:pointer-events-none disabled:opacity-50",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 hover:scale-105",
+        "disabled:pointer-events-none disabled:opacity-50 disabled:hover:scale-100",
+        isSelected
+          ? "bg-background text-foreground shadow-md"
+          : "text-muted-foreground hover:text-foreground hover:bg-background/50",
         className
       )}
       style={{
         backgroundColor: isSelected ? "var(--color-background)" : "transparent",
         color: isSelected ? "var(--color-foreground)" : "inherit",
-        boxShadow: isSelected ? "0 1px 2px rgba(0,0,0,0.1)" : "none"
+        boxShadow: isSelected ? "var(--shadow-md)" : "none"
       }}
       {...props}
     />

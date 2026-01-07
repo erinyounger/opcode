@@ -129,7 +129,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               exit={{ opacity: 0, scale: 0.95, y: -8 }}
               transition={{ duration: 0.15 }}
               className={cn(
-                "absolute mt-2 w-56 glass-card rounded-xl shadow-xl border border-border/50 z-[250]",
+                "absolute mt-2 w-56 rounded-xl shadow-2xl border border-border/80 z-[250]",
+                "bg-popover/95 backdrop-blur-md",
                 isWindowsOrLinuxStyle ? "left-0" : "right-0"
               )}
             >
