@@ -7,7 +7,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
 import { formatISOTimestamp } from "@/lib/date-utils";
 import type { AgentRunWithMetrics } from "@/lib/api";
-import { AGENT_ICONS } from "./CCAgents";
+import { ICON_MAP } from "./IconPicker";
 import { useTabState } from "@/hooks/useTabState";
 
 interface AgentRunsListProps {
@@ -56,7 +56,7 @@ export const AgentRunsList: React.FC<AgentRunsListProps> = ({
   }, [runs.length]);
   
   const renderIcon = (iconName: string) => {
-    const Icon = AGENT_ICONS[iconName as keyof typeof AGENT_ICONS] || Bot;
+    const Icon = ICON_MAP[iconName] || Bot;
     return <Icon className="h-4 w-4" />;
   };
   

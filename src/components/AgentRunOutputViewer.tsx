@@ -24,7 +24,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { StreamMessage } from './StreamMessage';
 import { ErrorBoundary } from './ErrorBoundary';
 import { formatISOTimestamp } from '@/lib/date-utils';
-import { AGENT_ICONS } from './CCAgents';
+import { ICON_MAP } from './IconPicker';
 import type { ClaudeStreamMessage } from './AgentExecution';
 import { useTabState } from '@/hooks/useTabState';
 
@@ -509,7 +509,7 @@ export function AgentRunOutputViewer({
   }, [messages]);
 
   const renderIcon = (iconName: string) => {
-    const Icon = AGENT_ICONS[iconName as keyof typeof AGENT_ICONS] || Bot;
+    const Icon = ICON_MAP[iconName] || Bot;
     return <Icon className="h-5 w-5" />;
   };
 
