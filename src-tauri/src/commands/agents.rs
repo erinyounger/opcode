@@ -22,6 +22,48 @@ fn find_claude_binary(app_handle: &AppHandle) -> Result<String, String> {
     crate::claude_binary::find_claude_binary(app_handle)
 }
 
+/// Create performance indexes for agent_runs table
+fn create_performance_indexes(conn: &Connection) -> SqliteResult<()> {
+    let indexes = [
+        ("idx_agent_runs_status", "CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status)"),
+        ("idx_agent_runs_agent_id", "CREATE INDEX IF NOT EXISTS idx_agent_runs_agent_id ON agent_runs(agent_id)"),
+        ("idx_agent_runs_created_at", "CREATE INDEX IF NOT EXISTS idx_agent_runs_created_at ON agent_runs(created_at DESC)"),
+        ("idx_agent_runs_session_id", "CREATE INDEX IF NOT EXISTS idx_agent_runs_session_id ON agent_runs(session_id)"),
+    ];
+
+    for (name, sql) in &indexes {
+        if let Err(e) = conn.execute(sql, []) {
+            log::warn!("Failed to create index {}: {}", name, e);
+        } else {
+            log::debug!("Created index: {}", name);
+        }
+    }
+
+    Ok(())
+}
+
+/// Migrate existing agent_runs table columns
+fn migrate_agent_runs_table(conn: &Connection) -> SqliteResult<()> {
+    let migrations = [
+        "ALTER TABLE agent_runs ADD COLUMN session_id TEXT",
+        "ALTER TABLE agent_runs ADD COLUMN status TEXT DEFAULT 'pending'",
+        "ALTER TABLE agent_runs ADD COLUMN pid INTEGER",
+        "ALTER TABLE agent_runs ADD COLUMN process_started_at TEXT",
+    ];
+
+    for migration in &migrations {
+        let _ = conn.execute(migration, []);
+    }
+
+    // Update existing records
+    conn.execute("UPDATE agent_runs SET session_id = '' WHERE session_id IS NULL", [])?;
+    conn.execute("UPDATE agent_runs SET status = 'completed' WHERE status IS NULL AND completed_at IS NOT NULL", [])?;
+    conn.execute("UPDATE agent_runs SET status = 'failed' WHERE status IS NULL AND completed_at IS NOT NULL AND session_id = ''", [])?;
+    conn.execute("UPDATE agent_runs SET status = 'pending' WHERE status IS NULL", [])?;
+
+    Ok(())
+}
+
 /// Represents a CC Agent stored in the database
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Agent {
@@ -286,17 +328,11 @@ pub fn init_database(app: &AppHandle) -> SqliteResult<Connection> {
         [],
     )?;
 
+    // Create indexes for better query performance
+    create_performance_indexes(&conn)?;
+
     // Migrate existing agent_runs table if needed
-    let _ = conn.execute("ALTER TABLE agent_runs ADD COLUMN session_id TEXT", []);
-    let _ = conn.execute(
-        "ALTER TABLE agent_runs ADD COLUMN status TEXT DEFAULT 'pending'",
-        [],
-    );
-    let _ = conn.execute("ALTER TABLE agent_runs ADD COLUMN pid INTEGER", []);
-    let _ = conn.execute(
-        "ALTER TABLE agent_runs ADD COLUMN process_started_at TEXT",
-        [],
-    );
+    migrate_agent_runs_table(&conn)?;
 
     // Drop old columns that are no longer needed (data is now read from JSONL files)
     // Note: SQLite doesn't support DROP COLUMN, so we'll ignore errors for existing columns
@@ -1599,8 +1635,8 @@ pub async fn export_agent_to_file(
     // Get the JSON data
     let json_data = export_agent(db, id).await?;
 
-    // Write to file
-    std::fs::write(&file_path, json_data).map_err(|e| format!("Failed to write file: {}", e))?;
+    // Write to file asynchronously
+    tokio::fs::write(&file_path, json_data).await.map_err(|e| format!("Failed to write file: {}", e))?;
 
     Ok(())
 }
@@ -1817,9 +1853,9 @@ pub async fn import_agent_from_file(
     db: State<'_, AgentDb>,
     file_path: String,
 ) -> Result<Agent, String> {
-    // Read the file
+    // Read the file asynchronously
     let mut json_data =
-        std::fs::read_to_string(&file_path).map_err(|e| format!("Failed to read file: {}", e))?;
+        tokio::fs::read_to_string(&file_path).await.map_err(|e| format!("Failed to read file: {}", e))?;
 
     // Normalize potential BOM and whitespace issues
     if json_data.starts_with('\u{feff}') {

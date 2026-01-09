@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Copy,
@@ -129,6 +129,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const isIMEComposingRef = useRef(false);
   
   // Session metrics state for enhanced analytics
+  const MAX_TOOL_TIMES = 100; // Limit to prevent memory issues
+  const MAX_MODEL_CHANGES = 50; // Limit to prevent memory issues
+
   const sessionMetrics = useRef({
     firstMessageTime: null as number | null,
     promptsSent: 0,
@@ -151,6 +154,32 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   useComponentMetrics('ClaudeCodeSession');
   // const aiTracking = useAIInteractionTracking('sonnet'); // Default model
   const workflowTracking = useWorkflowTracking('claude_session');
+
+  // Helper function to add model change with memory management
+  const addModelChange = useCallback((from: string, to: string, timestamp: number) => {
+    const metrics = sessionMetrics.current;
+
+    // Add new model change
+    metrics.modelChanges.push({ from, to, timestamp });
+
+    // Enforce limit to prevent memory issues - keep most recent changes
+    if (metrics.modelChanges.length > MAX_MODEL_CHANGES) {
+      metrics.modelChanges.splice(0, metrics.modelChanges.length - MAX_MODEL_CHANGES);
+    }
+  }, [MAX_MODEL_CHANGES]);
+
+  // Helper function to add tool execution time with memory management
+  const addToolExecutionTime = useCallback((time: number) => {
+    const metrics = sessionMetrics.current;
+
+    // Add new execution time
+    metrics.toolExecutionTimes.push(time);
+
+    // Enforce limit to prevent memory issues - keep most recent times
+    if (metrics.toolExecutionTimes.length > MAX_TOOL_TIMES) {
+      metrics.toolExecutionTimes.splice(0, metrics.toolExecutionTimes.length - MAX_TOOL_TIMES);
+    }
+  }, [MAX_TOOL_TIMES]);
   
   // Call onProjectPathChange when component mounts with initial path
   useEffect(() => {
@@ -818,16 +847,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         }
         
         // Track model changes
-        const lastModel = sessionMetrics.current.modelChanges.length > 0 
+        const lastModel = sessionMetrics.current.modelChanges.length > 0
           ? sessionMetrics.current.modelChanges[sessionMetrics.current.modelChanges.length - 1].to
           : (sessionMetrics.current.wasResumed ? 'sonnet' : model); // Default to sonnet if resumed
-        
+
         if (lastModel !== model) {
-          sessionMetrics.current.modelChanges.push({
-            from: lastModel,
-            to: model,
-            timestamp: Date.now()
-          });
+          addModelChange(lastModel, model, Date.now());
         }
         
         // Track enhanced prompt submission

@@ -201,22 +201,28 @@ impl CheckpointManager {
 
         // Ensure every file in the project is tracked so new checkpoints include all files
         // Recursively walk the project directory and track each file
-        fn collect_files(
+        /// Check if directory should be skipped (e.g., hidden directories)
+        fn should_skip_directory(path: &std::path::Path) -> bool {
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .map(|name| name.starts_with('.'))
+                .unwrap_or(false)
+        }
+
+        async fn collect_files(
             dir: &std::path::Path,
             base: &std::path::Path,
             files: &mut Vec<std::path::PathBuf>,
         ) -> Result<(), std::io::Error> {
-            for entry in std::fs::read_dir(dir)? {
-                let entry = entry?;
+            let mut entries = tokio::fs::read_dir(dir).await?;
+            while let Some(entry) = entries.next_entry().await? {
                 let path = entry.path();
                 if path.is_dir() {
                     // Skip hidden directories like .git
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        if name.starts_with('.') {
-                            continue;
-                        }
+                    if should_skip_directory(&path) {
+                        continue;
                     }
-                    collect_files(&path, base, files)?;
+                    Box::pin(collect_files(&path, base, files)).await?;
                 } else if path.is_file() {
                     // Compute relative path from project root
                     if let Ok(rel) = path.strip_prefix(base) {
@@ -228,7 +234,7 @@ impl CheckpointManager {
         }
         let mut all_files = Vec::new();
         let project_dir = &self.project_path;
-        let _ = collect_files(project_dir.as_path(), project_dir.as_path(), &mut all_files);
+        collect_files(project_dir.as_path(), project_dir.as_path(), &mut all_files).await?;
         for rel in all_files {
             if let Some(p) = rel.to_str() {
                 // Track each file for snapshot
@@ -458,22 +464,28 @@ impl CheckpointManager {
                 .load_checkpoint(&self.project_id, &self.session_id, checkpoint_id)?;
 
         // First, collect all files currently in the project to handle deletions
-        fn collect_all_project_files(
+        /// Check if directory should be skipped (e.g., hidden directories)
+        fn should_skip_directory(path: &std::path::Path) -> bool {
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .map(|name| name.starts_with('.'))
+                .unwrap_or(false)
+        }
+
+        async fn collect_all_project_files(
             dir: &std::path::Path,
             base: &std::path::Path,
             files: &mut Vec<std::path::PathBuf>,
         ) -> Result<(), std::io::Error> {
-            for entry in std::fs::read_dir(dir)? {
-                let entry = entry?;
+            let mut entries = tokio::fs::read_dir(dir).await?;
+            while let Some(entry) = entries.next_entry().await? {
                 let path = entry.path();
                 if path.is_dir() {
                     // Skip hidden directories like .git
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        if name.starts_with('.') {
-                            continue;
-                        }
+                    if should_skip_directory(&path) {
+                        continue;
                     }
-                    collect_all_project_files(&path, base, files)?;
+                    Box::pin(collect_all_project_files(&path, base, files)).await?;
                 } else if path.is_file() {
                     // Compute relative path from project root
                     if let Ok(rel) = path.strip_prefix(base) {
@@ -485,8 +497,7 @@ impl CheckpointManager {
         }
 
         let mut current_files = Vec::new();
-        let _ =
-            collect_all_project_files(&self.project_path, &self.project_path, &mut current_files);
+        collect_all_project_files(&self.project_path, &self.project_path, &mut current_files).await?;
 
         // Create a set of files that should exist after restore
         let mut checkpoint_files = std::collections::HashSet::new();

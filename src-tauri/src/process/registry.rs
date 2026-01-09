@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use tokio::process::Child;
 
@@ -25,12 +25,152 @@ pub struct ProcessInfo {
     pub model: String,
 }
 
+/// Circular buffer for managing live output with bounded memory
+pub struct CircularOutputBuffer {
+    buffer: VecDeque<String>,
+    max_lines: usize,
+    max_bytes: usize,
+    current_bytes: usize,
+}
+
+impl CircularOutputBuffer {
+    /// Create a new circular buffer with specified limits
+    pub fn new(max_lines: usize, max_bytes: usize) -> Self {
+        // Ensure reasonable limits
+        let max_lines = max_lines.max(10).min(10000);
+        let max_bytes = max_bytes.max(1024).min(100 * 1024 * 1024); // Max 100MB
+
+        Self {
+            buffer: VecDeque::with_capacity(max_lines),
+            max_lines,
+            max_bytes,
+            current_bytes: 0,
+        }
+    }
+
+    /// Append output to the buffer with automatic cleanup
+    pub fn append(&mut self, output: &str) {
+        if output.is_empty() {
+            return;
+        }
+
+        // Normalize line ending and create line
+        let line = if !output.ends_with('\n') {
+            format!("{}\n", output)
+        } else {
+            output.to_string()
+        };
+
+        let line_bytes = line.len();
+
+        // Early check: if single line exceeds max_bytes, truncate it
+        let line = if line_bytes > self.max_bytes {
+            // Keep only the last max_bytes characters
+            line[line.len() - self.max_bytes..].to_string()
+        } else {
+            line
+        };
+
+        // Add the new line
+        self.buffer.push_back(line);
+        self.current_bytes += line_bytes;
+
+        // Enforce both line and byte limits efficiently
+        self.enforce_limits();
+    }
+
+    /// Efficiently enforce size limits
+    fn enforce_limits(&mut self) {
+        // Single loop to check both conditions
+        while self.buffer.len() > self.max_lines || self.current_bytes > self.max_bytes {
+            if let Some(old_line) = self.buffer.pop_front() {
+                self.current_bytes -= old_line.len();
+            }
+        }
+    }
+
+    /// Get recent lines from the buffer
+    pub fn get_recent(&self, lines: usize) -> String {
+        let lines_to_get = std::cmp::min(lines, self.buffer.len());
+        if lines_to_get == 0 {
+            return String::new();
+        }
+
+        let start_idx = self.buffer.len() - lines_to_get;
+        self.buffer
+            .iter()
+            .skip(start_idx)
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    /// Get all content from the buffer
+    pub fn get_all(&self) -> String {
+        self.buffer.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("")
+    }
+
+    /// Clear the buffer
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+        self.current_bytes = 0;
+    }
+
+    /// Get current buffer length in lines
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    /// Check if buffer is empty
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
+    /// Get total bytes in buffer
+    pub fn total_bytes(&self) -> usize {
+        self.current_bytes
+    }
+
+    /// Get current usage as percentage of limits
+    pub fn usage_percent(&self) -> f32 {
+        let line_percent = (self.buffer.len() as f32 / self.max_lines as f32) * 100.0;
+        let byte_percent = (self.current_bytes as f32 / self.max_bytes as f32) * 100.0;
+        line_percent.max(byte_percent)
+    }
+
+    /// Check if buffer is near capacity
+    pub fn is_near_capacity(&self) -> bool {
+        self.usage_percent() > 80.0
+    }
+
+    /// Get buffer statistics
+    pub fn stats(&self) -> BufferStats {
+        BufferStats {
+            lines: self.buffer.len(),
+            bytes: self.current_bytes,
+            max_lines: self.max_lines,
+            max_bytes: self.max_bytes,
+            usage_percent: self.usage_percent(),
+        }
+    }
+}
+
+/// Statistics for buffer usage
+#[derive(Debug, Clone)]
+pub struct BufferStats {
+    pub lines: usize,
+    pub bytes: usize,
+    pub max_lines: usize,
+    pub max_bytes: usize,
+    pub usage_percent: f32,
+}
+
 /// Information about a running process with handle
 #[allow(dead_code)]
 pub struct ProcessHandle {
     pub info: ProcessInfo,
     pub child: Arc<Mutex<Option<Child>>>,
-    pub live_output: Arc<Mutex<String>>,
+    pub live_output: Arc<Mutex<CircularOutputBuffer>>,
 }
 
 /// Registry for tracking active agent processes
@@ -47,12 +187,32 @@ impl ProcessRegistry {
         }
     }
 
+    /// Get default buffer configuration
+    fn default_buffer_config() -> (usize, usize) {
+        // Default: 1000 lines or 1MB, whichever comes first
+        (1000, 1024 * 1024)
+    }
+
     /// Generate a unique ID for non-agent processes
     pub fn generate_id(&self) -> Result<i64, String> {
         let mut next_id = self.next_id.lock().map_err(|e| e.to_string())?;
         let id = *next_id;
         *next_id += 1;
         Ok(id)
+    }
+
+    /// Create a ProcessHandle with common initialization logic
+    fn create_handle(
+        _run_id: i64,
+        info: ProcessInfo,
+        child: Option<Child>,
+    ) -> ProcessHandle {
+        let (max_lines, max_bytes) = Self::default_buffer_config();
+        ProcessHandle {
+            info,
+            child: Arc::new(Mutex::new(child)),
+            live_output: Arc::new(Mutex::new(CircularOutputBuffer::new(max_lines, max_bytes))),
+        }
     }
 
     /// Register a new running agent process
@@ -80,7 +240,7 @@ impl ProcessRegistry {
             model,
         };
 
-        self.register_process_internal(run_id, process_info, child)
+        self.register_process_internal(run_id, process_info, Some(child))
     }
 
     /// Register a new running agent process using sidecar (similar to register_process but for sidecar children)
@@ -108,16 +268,7 @@ impl ProcessRegistry {
         };
 
         // For sidecar processes, we register without the child handle since it's managed differently
-        let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
-
-        let process_handle = ProcessHandle {
-            info: process_info,
-            child: Arc::new(Mutex::new(None)), // No tokio::process::Child handle for sidecar
-            live_output: Arc::new(Mutex::new(String::new())),
-        };
-
-        processes.insert(run_id, process_handle);
-        Ok(())
+        self.register_process_internal(run_id, process_info, None)
     }
 
     /// Register a new Claude session (without child process - handled separately)
@@ -142,15 +293,7 @@ impl ProcessRegistry {
         };
 
         // Register without child - Claude sessions use ClaudeProcessState for process management
-        let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
-
-        let process_handle = ProcessHandle {
-            info: process_info,
-            child: Arc::new(Mutex::new(None)), // No child handle for Claude sessions
-            live_output: Arc::new(Mutex::new(String::new())),
-        };
-
-        processes.insert(run_id, process_handle);
+        self.register_process_internal(run_id, process_info, None)?;
         Ok(run_id)
     }
 
@@ -159,17 +302,11 @@ impl ProcessRegistry {
         &self,
         run_id: i64,
         process_info: ProcessInfo,
-        child: Child,
+        child: Option<Child>,
     ) -> Result<(), String> {
         let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
-
-        let process_handle = ProcessHandle {
-            info: process_info,
-            child: Arc::new(Mutex::new(Some(child))),
-            live_output: Arc::new(Mutex::new(String::new())),
-        };
-
-        processes.insert(run_id, process_handle);
+        let handle = Self::create_handle(run_id, process_info, child);
+        processes.insert(run_id, handle);
         Ok(())
     }
 
@@ -475,20 +612,41 @@ impl ProcessRegistry {
         let processes = self.processes.lock().map_err(|e| e.to_string())?;
         if let Some(handle) = processes.get(&run_id) {
             let mut live_output = handle.live_output.lock().map_err(|e| e.to_string())?;
-            live_output.push_str(output);
-            live_output.push('\n');
+            live_output.append(output);
         }
         Ok(())
     }
 
-    /// Get live output for a process
+    /// Get live output for a process (all available output)
     pub fn get_live_output(&self, run_id: i64) -> Result<String, String> {
         let processes = self.processes.lock().map_err(|e| e.to_string())?;
         if let Some(handle) = processes.get(&run_id) {
             let live_output = handle.live_output.lock().map_err(|e| e.to_string())?;
-            Ok(live_output.clone())
+            Ok(live_output.get_all())
         } else {
             Ok(String::new())
+        }
+    }
+
+    /// Get recent live output for a process (limited by number of lines)
+    pub fn get_recent_live_output(&self, run_id: i64, lines: usize) -> Result<String, String> {
+        let processes = self.processes.lock().map_err(|e| e.to_string())?;
+        if let Some(handle) = processes.get(&run_id) {
+            let live_output = handle.live_output.lock().map_err(|e| e.to_string())?;
+            Ok(live_output.get_recent(lines))
+        } else {
+            Ok(String::new())
+        }
+    }
+
+    /// Get buffer statistics for a process
+    pub fn get_buffer_stats(&self, run_id: i64) -> Result<Option<(usize, usize)>, String> {
+        let processes = self.processes.lock().map_err(|e| e.to_string())?;
+        if let Some(handle) = processes.get(&run_id) {
+            let live_output = handle.live_output.lock().map_err(|e| e.to_string())?;
+            Ok(Some((live_output.len(), live_output.total_bytes())))
+        } else {
+            Ok(None)
         }
     }
 

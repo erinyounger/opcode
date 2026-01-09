@@ -150,113 +150,108 @@ export async function apiCall<T>(command: string, params?: any): Promise<T> {
   return await restApiCall<T>(endpoint, params);
 }
 
+// Extract command mappings as constants
+const COMMAND_ENDPOINTS: Record<string, string> = {
+  // Project and session commands
+  'list_projects': '/api/projects',
+  'get_project_sessions': '/api/projects/{projectId}/sessions',
+
+  // Agent commands
+  'list_agents': '/api/agents',
+  'fetch_github_agents': '/api/agents/github',
+  'fetch_github_agent_content': '/api/agents/github/content',
+  'import_agent_from_github': '/api/agents/import/github',
+  'create_agent': '/api/agents',
+  'update_agent': '/api/agents/{id}',
+  'delete_agent': '/api/agents/{id}',
+  'get_agent': '/api/agents/{id}',
+  'export_agent': '/api/agents/{id}/export',
+  'import_agent': '/api/agents/import',
+  'import_agent_from_file': '/api/agents/import/file',
+  'execute_agent': '/api/agents/{agentId}/execute',
+  'list_agent_runs': '/api/agents/runs',
+  'get_agent_run': '/api/agents/runs/{id}',
+  'get_agent_run_with_real_time_metrics': '/api/agents/runs/{id}/metrics',
+  'list_running_sessions': '/api/sessions/running',
+  'kill_agent_session': '/api/agents/sessions/{runId}/kill',
+  'get_session_status': '/api/agents/sessions/{runId}/status',
+  'cleanup_finished_processes': '/api/agents/sessions/cleanup',
+  'get_session_output': '/api/agents/sessions/{runId}/output',
+  'get_live_session_output': '/api/agents/sessions/{runId}/output/live',
+  'stream_session_output': '/api/agents/sessions/{runId}/output/stream',
+  'load_agent_session_history': '/api/agents/sessions/{sessionId}/history',
+
+  // Usage commands
+  'get_usage_stats': '/api/usage',
+  'get_usage_by_date_range': '/api/usage/range',
+  'get_session_stats': '/api/usage/sessions',
+  'get_usage_details': '/api/usage/details',
+
+  // Settings and configuration
+  'get_claude_settings': '/api/settings/claude',
+  'save_claude_settings': '/api/settings/claude',
+  'get_system_prompt': '/api/settings/system-prompt',
+  'save_system_prompt': '/api/settings/system-prompt',
+  'check_claude_version': '/api/settings/claude/version',
+  'find_claude_md_files': '/api/claude-md',
+  'read_claude_md_file': '/api/claude-md/read',
+  'read_text_file': '/api/text-file/read',
+  'save_claude_md_file': '/api/claude-md/save',
+
+  // Session management
+  'open_new_session': '/api/sessions/new',
+  'load_session_history': '/api/sessions/{sessionId}/history/{projectId}',
+  'list_running_claude_sessions': '/api/sessions/running',
+  'execute_claude_code': '/api/sessions/execute',
+  'continue_claude_code': '/api/sessions/continue',
+  'resume_claude_code': '/api/sessions/resume',
+  'cancel_claude_execution': '/api/sessions/{sessionId}/cancel',
+  'get_claude_session_output': '/api/sessions/{sessionId}/output',
+
+  // MCP commands
+  'mcp_add': '/api/mcp/servers',
+  'mcp_list': '/api/mcp/servers',
+  'mcp_get': '/api/mcp/servers/{name}',
+  'mcp_remove': '/api/mcp/servers/{name}',
+  'mcp_add_json': '/api/mcp/servers/json',
+  'mcp_serve': '/api/mcp/serve',
+  'mcp_test_connection': '/api/mcp/servers/{name}/test',
+  'mcp_reset_project_choices': '/api/mcp/reset-choices',
+  'mcp_get_server_status': '/api/mcp/status',
+  'mcp_read_project_config': '/api/mcp/project-config',
+  'mcp_save_project_config': '/api/mcp/project-config',
+
+  // Binary and installation management
+  'get_claude_binary_path': '/api/settings/claude/binary-path',
+  'set_claude_binary_path': '/api/settings/claude/binary-path',
+  'list_claude_installations': '/api/settings/claude/installations',
+
+  // Storage commands
+  'storage_list_tables': '/api/storage/tables',
+  'storage_read_table': '/api/storage/tables/{tableName}',
+  'storage_update_row': '/api/storage/tables/{tableName}/rows/{id}',
+  'storage_delete_row': '/api/storage/tables/{tableName}/rows/{id}',
+  'storage_insert_row': '/api/storage/tables/{tableName}/rows',
+  'storage_execute_sql': '/api/storage/sql',
+  'storage_reset_database': '/api/storage/reset',
+
+  // Hooks configuration
+  'get_hooks_config': '/api/hooks/config',
+  'update_hooks_config': '/api/hooks/config',
+  'validate_hook_command': '/api/hooks/validate',
+
+  // Slash commands
+  'slash_commands_list': '/api/slash-commands',
+  'slash_command_get': '/api/slash-commands/{commandId}',
+  'slash_command_save': '/api/slash-commands',
+  'slash_command_delete': '/api/slash-commands/{commandId}',
+};
+
 /**
  * Map Tauri command names to REST API endpoints
  */
 function mapCommandToEndpoint(command: string, _params?: any): string {
-  const commandToEndpoint: Record<string, string> = {
-    // Project and session commands
-    'list_projects': '/api/projects',
-    'get_project_sessions': '/api/projects/{projectId}/sessions',
-    
-    // Agent commands
-    'list_agents': '/api/agents',
-    'fetch_github_agents': '/api/agents/github',
-    'fetch_github_agent_content': '/api/agents/github/content',
-    'import_agent_from_github': '/api/agents/import/github',
-    'create_agent': '/api/agents',
-    'update_agent': '/api/agents/{id}',
-    'delete_agent': '/api/agents/{id}',
-    'get_agent': '/api/agents/{id}',
-    'export_agent': '/api/agents/{id}/export',
-    'import_agent': '/api/agents/import',
-    'import_agent_from_file': '/api/agents/import/file',
-    'execute_agent': '/api/agents/{agentId}/execute',
-    'list_agent_runs': '/api/agents/runs',
-    'get_agent_run': '/api/agents/runs/{id}',
-    'get_agent_run_with_real_time_metrics': '/api/agents/runs/{id}/metrics',
-    'list_running_sessions': '/api/sessions/running',
-    'kill_agent_session': '/api/agents/sessions/{runId}/kill',
-    'get_session_status': '/api/agents/sessions/{runId}/status',
-    'cleanup_finished_processes': '/api/agents/sessions/cleanup',
-    'get_session_output': '/api/agents/sessions/{runId}/output',
-    'get_live_session_output': '/api/agents/sessions/{runId}/output/live',
-    'stream_session_output': '/api/agents/sessions/{runId}/output/stream',
-    'load_agent_session_history': '/api/agents/sessions/{sessionId}/history',
-    
-    // Usage commands
-    'get_usage_stats': '/api/usage',
-    'get_usage_by_date_range': '/api/usage/range',
-    'get_session_stats': '/api/usage/sessions',
-    'get_usage_details': '/api/usage/details',
-    
-    // Settings and configuration
-    'get_claude_settings': '/api/settings/claude',
-    'save_claude_settings': '/api/settings/claude',
-    'get_system_prompt': '/api/settings/system-prompt',
-    'save_system_prompt': '/api/settings/system-prompt',
-    'check_claude_version': '/api/settings/claude/version',
-    'find_claude_md_files': '/api/claude-md',
-    'read_claude_md_file': '/api/claude-md/read',
-    'read_text_file': '/api/text-file/read',
-    'save_claude_md_file': '/api/claude-md/save',
-    
-    // Session management
-    'open_new_session': '/api/sessions/new',
-    'load_session_history': '/api/sessions/{sessionId}/history/{projectId}',
-    'list_running_claude_sessions': '/api/sessions/running',
-    'execute_claude_code': '/api/sessions/execute',
-    'continue_claude_code': '/api/sessions/continue',
-    'resume_claude_code': '/api/sessions/resume',
-    'cancel_claude_execution': '/api/sessions/{sessionId}/cancel',
-    'get_claude_session_output': '/api/sessions/{sessionId}/output',
-    
-    // MCP commands
-    'mcp_add': '/api/mcp/servers',
-    'mcp_list': '/api/mcp/servers',
-    'mcp_get': '/api/mcp/servers/{name}',
-    'mcp_remove': '/api/mcp/servers/{name}',
-    'mcp_add_json': '/api/mcp/servers/json',
-    'mcp_serve': '/api/mcp/serve',
-    'mcp_test_connection': '/api/mcp/servers/{name}/test',
-    'mcp_reset_project_choices': '/api/mcp/reset-choices',
-    'mcp_get_server_status': '/api/mcp/status',
-    'mcp_read_project_config': '/api/mcp/project-config',
-    'mcp_save_project_config': '/api/mcp/project-config',
-    
-    // Binary and installation management
-    'get_claude_binary_path': '/api/settings/claude/binary-path',
-    'set_claude_binary_path': '/api/settings/claude/binary-path',
-    'list_claude_installations': '/api/settings/claude/installations',
-    
-    // Storage commands
-    'storage_list_tables': '/api/storage/tables',
-    'storage_read_table': '/api/storage/tables/{tableName}',
-    'storage_update_row': '/api/storage/tables/{tableName}/rows/{id}',
-    'storage_delete_row': '/api/storage/tables/{tableName}/rows/{id}',
-    'storage_insert_row': '/api/storage/tables/{tableName}/rows',
-    'storage_execute_sql': '/api/storage/sql',
-    'storage_reset_database': '/api/storage/reset',
-    
-    // Hooks configuration
-    'get_hooks_config': '/api/hooks/config',
-    'update_hooks_config': '/api/hooks/config',
-    'validate_hook_command': '/api/hooks/validate',
-    
-    // Slash commands
-    'slash_commands_list': '/api/slash-commands',
-    'slash_command_get': '/api/slash-commands/{commandId}',
-    'slash_command_save': '/api/slash-commands',
-    'slash_command_delete': '/api/slash-commands/{commandId}',
-  };
-
-  const endpoint = commandToEndpoint[command];
-  if (!endpoint) {
-    console.warn(`Unknown command: ${command}, falling back to generic endpoint`);
-    return `/api/unknown/${command}`;
-  }
-
-  return endpoint;
+  return COMMAND_ENDPOINTS[command] || `/api/unknown/${command}`;
 }
 
 /**
@@ -280,6 +275,18 @@ async function handleStreamingCommand<T>(command: string, params?: any): Promise
     const wsUrl = `${wsProtocol}//${window.location.host}/ws/claude`;
 
     const ws = new WebSocket(wsUrl);
+
+    // Helper function to dispatch events for both generic and session-specific handlers
+    const dispatchSessionEvent = (eventType: string, detail: any) => {
+      // Get session ID from params
+      const sessionId = params?.sessionId || 'default';
+
+      // Dispatch generic event for backward compatibility
+      window.dispatchEvent(new CustomEvent(eventType, { detail }));
+
+      // Dispatch session-specific event for proper session isolation
+      window.dispatchEvent(new CustomEvent(`${eventType}:${sessionId}`, { detail }));
+    };
 
     ws.onopen = () => {
       // Send execution request
@@ -308,21 +315,16 @@ async function handleStreamingCommand<T>(command: string, params?: any): Promise
               ? JSON.parse(message.content)
               : message.content;
 
-            // Simulate Tauri event for compatibility with existing UI
-            const customEvent = new CustomEvent('claude-output', {
-              detail: claudeMessage
-            });
-            window.dispatchEvent(customEvent);
+            // Dispatch output event for both generic and session-specific handlers
+            dispatchSessionEvent('claude-output', claudeMessage);
           } catch (e) {
             console.error('Failed to parse Claude output content:', e);
             console.error('Content that failed to parse:', message.content);
           }
         } else if (message.type === 'completion') {
-          // Dispatch claude-complete event for UI state management
-          const completeEvent = new CustomEvent('claude-complete', {
-            detail: message.status === 'success'
-          });
-          window.dispatchEvent(completeEvent);
+          // Dispatch completion event for UI state management
+          const isSuccess = message.status === 'success';
+          dispatchSessionEvent('claude-complete', isSuccess);
 
           ws.close();
           if (message.status === 'success') {
@@ -331,13 +333,11 @@ async function handleStreamingCommand<T>(command: string, params?: any): Promise
             reject(new Error(message.error || 'Execution failed'));
           }
         } else if (message.type === 'error') {
-          // Dispatch claude-error event for UI error handling
-          const errorEvent = new CustomEvent('claude-error', {
-            detail: message.message || 'Unknown error'
-          });
-          window.dispatchEvent(errorEvent);
+          // Dispatch error event for UI error handling
+          const errorMessage = message.message || 'Unknown error';
+          dispatchSessionEvent('claude-error', errorMessage);
 
-          reject(new Error(message.message || 'Unknown error'));
+          reject(new Error(errorMessage));
         }
       } catch (e) {
         console.error('Failed to parse WebSocket message:', e);
