@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -9,20 +9,18 @@ import { MCPServerList } from "./MCPServerList";
 import { MCPAddServer } from "./MCPAddServer";
 import { MCPImportExport } from "./MCPImportExport";
 
+interface ToastState {
+  message: string;
+  type: "success" | "error";
+}
+
 interface MCPManagerProps {
-  /**
-   * Callback to go back to the main view
-   */
   onBack: () => void;
-  /**
-   * Optional className for styling
-   */
   className?: string;
 }
 
 /**
- * Main component for managing MCP (Model Context Protocol) servers
- * Provides a comprehensive UI for adding, configuring, and managing MCP servers
+ * Main component for managing MCP servers
  */
 export const MCPManager: React.FC<MCPManagerProps> = ({
   className: _className,
@@ -31,25 +29,16 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  
-
-  // Load servers on mount
-  useEffect(() => {
-    loadServers();
-  }, []);
+  const [toast, setToast] = useState<ToastState | null>(null);
 
   /**
    * Loads all MCP servers
    */
-  const loadServers = async () => {
+  const loadServers = useCallback(async (): Promise<void> => {
     try {
       setLoading(true);
       setError(null);
-
       const serverList = await api.mcpList();
-
-
       setServers(serverList);
     } catch (err) {
       console.error("MCPManager: Failed to load MCP servers:", err);
@@ -57,42 +46,79 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadServers();
+  }, [loadServers]);
 
   /**
-   * Handles server added event
+   * Shows a toast notification
    */
-  const handleServerAdded = () => {
-    loadServers();
-    setToast({ message: "MCP server added successfully!", type: "success" });
-    setActiveTab("servers");
-  };
+  const showToast = useCallback((message: string, type: "success" | "error"): void => {
+    setToast({ message, type });
+  }, []);
+
+  /**
+   * Handles server added event with optimistic update
+   */
+  const handleServerAdded = useCallback(async (newServer?: MCPServer): Promise<void> => {
+    if (!newServer) {
+      loadServers();
+      showToast("MCP server added successfully!", "success");
+      setActiveTab("servers");
+      return;
+    }
+
+    // 乐观更新：立即添加到列表
+    setServers(prev => [...prev, newServer]);
+    setLoading(false);
+
+    try {
+      const verifiedServer = await api.mcpGet(newServer.name);
+      setServers(prev => prev.map(s => s.name === newServer.name ? verifiedServer : s));
+      showToast("MCP server added successfully!", "success");
+      setActiveTab("servers");
+    } catch (err) {
+      // 验证失败时回滚
+      setServers(prev => prev.filter(s => s.name !== newServer.name));
+      showToast(`Failed to verify server: ${err}`, "error");
+    }
+  }, [loadServers, showToast]);
 
   /**
    * Handles server removed event
    */
-  const handleServerRemoved = (name: string) => {
+  const handleServerRemoved = useCallback((name: string): void => {
     setServers(prev => prev.filter(s => s.name !== name));
-    setToast({ message: `Server "${name}" removed successfully!`, type: "success" });
-  };
+    showToast(`Server "${name}" removed successfully!`, "success");
+  }, [showToast]);
 
   /**
    * Handles import completed event
    */
-  const handleImportCompleted = (imported: number, failed: number) => {
+  const handleImportCompleted = useCallback((imported: number, failed: number): void => {
     loadServers();
     if (failed === 0) {
-      setToast({ 
-        message: `Successfully imported ${imported} server${imported > 1 ? 's' : ''}!`, 
-        type: "success" 
-      });
+      showToast(`Successfully imported ${imported} server${imported > 1 ? 's' : ''}!`, "success");
     } else {
-      setToast({ 
-        message: `Imported ${imported} server${imported > 1 ? 's' : ''}, ${failed} failed`, 
-        type: "error" 
-      });
+      showToast(`Imported ${imported} server${imported > 1 ? 's' : ''}, ${failed} failed`, "error");
     }
-  };
+  }, [loadServers, showToast]);
+
+  /**
+   * Handles error from child components
+   */
+  const handleError = useCallback((message: string): void => {
+    showToast(message, "error");
+  }, [showToast]);
+
+  /**
+   * Dismisses toast
+   */
+  const dismissToast = useCallback((): void => {
+    setToast(null);
+  }, []);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -161,7 +187,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
                 <Card>
                   <MCPAddServer
                     onServerAdded={handleServerAdded}
-                    onError={(message: string) => setToast({ message, type: "error" })}
+                    onError={handleError}
                   />
                 </Card>
               </TabsContent>
@@ -171,7 +197,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
                 <Card className="overflow-hidden">
                   <MCPImportExport
                     onImportCompleted={handleImportCompleted}
-                    onError={(message: string) => setToast({ message, type: "error" })}
+                    onError={handleError}
                   />
                 </Card>
               </TabsContent>
@@ -186,7 +212,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
           <Toast
             message={toast.message}
             type={toast.type}
-            onDismiss={() => setToast(null)}
+            onDismiss={dismissToast}
           />
         )}
       </ToastContainer>

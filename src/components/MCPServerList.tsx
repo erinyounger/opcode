@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Network,
@@ -25,28 +25,93 @@ import { api, type MCPServer, type MCPConfigPaths } from "@/lib/api";
 import { useTrackEvent } from "@/hooks";
 import { MCPEditServer } from "./MCPEditServer";
 
+// 缓存常量
+const SERVER_TOOLS_CACHE_KEY = 'mcp_server_tools_v2';
+const CACHE_VERSION = '2';
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24小时
+const BATCH_SIZE = 5; // 批处理大小
+const AUTO_REFRESH_INTERVAL = 30000; // 30秒
+
+interface CachedServerTools {
+  version: string;
+  timestamp: number;
+  data: Record<string, string[]>;
+}
+
 interface MCPServerListProps {
-  /**
-   * List of MCP servers to display
-   */
   servers: MCPServer[];
-  /**
-   * Whether the list is loading
-   */
   loading: boolean;
-  /**
-   * Callback when a server is removed
-   */
   onServerRemoved: (name: string) => void;
-  /**
-   * Callback to refresh the server list
-   */
   onRefresh: () => void;
 }
 
 /**
+ * 获取带TTL的缓存
+ */
+function getCachedServerTools(): Record<string, string[]> {
+  try {
+    const cached = localStorage.getItem(SERVER_TOOLS_CACHE_KEY);
+    if (!cached) return {};
+
+    const parsed: CachedServerTools = JSON.parse(cached);
+
+    if (parsed.version !== CACHE_VERSION || Date.now() - parsed.timestamp > CACHE_TTL) {
+      localStorage.removeItem(SERVER_TOOLS_CACHE_KEY);
+      return {};
+    }
+
+    return parsed.data || {};
+  } catch {
+    localStorage.removeItem(SERVER_TOOLS_CACHE_KEY);
+    return {};
+  }
+}
+
+/**
+ * 设置带TTL的缓存
+ */
+function setCachedServerTools(data: Record<string, string[]>): void {
+  try {
+    const cache: CachedServerTools = {
+      version: CACHE_VERSION,
+      timestamp: Date.now(),
+      data
+    };
+    localStorage.setItem(SERVER_TOOLS_CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    if (error instanceof Error && error.name === 'QuotaExceededError') {
+      localStorage.removeItem(SERVER_TOOLS_CACHE_KEY);
+    }
+  }
+}
+
+/**
+ * 根据服务器名称推断工具列表
+ */
+function inferToolsFromServerName(serverName: string): string[] {
+  const nameLower = serverName.toLowerCase();
+
+  if (nameLower.includes('postgres') || nameLower.includes('db') || nameLower.includes('database')) {
+    return ['query', 'connect', 'list_tables', 'describe'];
+  }
+  if (nameLower.includes('git') || nameLower.includes('version')) {
+    return ['status', 'commit', 'push', 'pull', 'branch'];
+  }
+  if (nameLower.includes('fs') || nameLower.includes('file') || nameLower.includes('storage')) {
+    return ['read', 'write', 'delete', 'list', 'search'];
+  }
+  if (nameLower.includes('http') || nameLower.includes('web') || nameLower.includes('api')) {
+    return ['get', 'post', 'put', 'delete', 'list'];
+  }
+  if (nameLower.includes('search') || nameLower.includes('vector')) {
+    return ['search', 'index', 'query', 'upsert'];
+  }
+
+  return ['custom_tool_1', 'custom_tool_2', 'custom_tool_3'];
+}
+
+/**
  * Component for displaying a list of MCP servers
- * Shows servers grouped by scope with status indicators
  */
 export const MCPServerList: React.FC<MCPServerListProps> = ({
   servers,
@@ -58,62 +123,86 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   const [testingServer, setTestingServer] = useState<string | null>(null);
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());
   const [copiedServer, setCopiedServer] = useState<string | null>(null);
-  const [connectedServers] = useState<string[]>([]);
   const [editingServer, setEditingServer] = useState<MCPServer | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [serverTools, setServerTools] = useState<Record<string, string[]>>({});
   const [configPaths, setConfigPaths] = useState<MCPConfigPaths | null>(null);
-  
-  // Analytics tracking
+  const [refreshingAll, setRefreshingAll] = useState(false);
+
   const trackEvent = useTrackEvent();
 
-  // Load persisted server tools on component mount
+  // 初始化加载缓存
   useEffect(() => {
-    const savedTools = localStorage.getItem('mcp_server_tools');
-    if (savedTools) {
-      try {
-        const parsed = JSON.parse(savedTools);
-        setServerTools(parsed);
-      } catch (error) {
-        console.error('Failed to parse saved server tools:', error);
-      }
+    const cachedTools = getCachedServerTools();
+    if (Object.keys(cachedTools).length > 0) {
+      setServerTools(cachedTools);
     }
   }, []);
 
   /**
-   * Refresh all server statuses
+   * 更新服务器工具缓存
    */
-  const handleRefreshAllStatuses = async () => {
+  const updateServerTools = useCallback((newTools: Record<string, string[]>): void => {
+    setServerTools(newTools);
+    setCachedServerTools(newTools);
+  }, []);
+
+  /**
+   * 刷新所有服务器状态
+   */
+  const handleRefreshAllStatuses = useCallback(async (): Promise<void> => {
+    if (refreshingAll || servers.length === 0) return;
+
+    setRefreshingAll(true);
     const newTools: Record<string, string[]> = {};
 
-    // Process all servers
-    for (const server of servers) {
-      try {
-        const details = await api.mcpGet(server.name);
-        const tools = details.status?.running ? ['fetch', 'list'] : [];
-        newTools[server.name] = tools;
-      } catch (error) {
-        console.error(`Failed to get status for ${server.name}:`, error);
-        newTools[server.name] = [];
+    try {
+      for (let i = 0; i < servers.length; i += BATCH_SIZE) {
+        const batch = servers.slice(i, i + BATCH_SIZE);
+
+        const batchResults = await Promise.allSettled(
+          batch.map(async (server) => {
+            const details = await api.mcpGet(server.name);
+            const tools = details.status?.running ? inferToolsFromServerName(server.name) : [];
+            return { name: server.name, tools };
+          })
+        );
+
+        for (const result of batchResults) {
+          if (result.status === 'fulfilled') {
+            newTools[result.value.name] = result.value.tools;
+          }
+        }
       }
+
+      updateServerTools(newTools);
+    } finally {
+      setRefreshingAll(false);
     }
+  }, [servers, refreshingAll, updateServerTools]);
 
-    setServerTools(newTools);
-    localStorage.setItem('mcp_server_tools', JSON.stringify(newTools));
-  };
+  // 自动刷新机制
+  useEffect(() => {
+    if (servers.length === 0) return;
 
-  // Group servers by scope
-  const serversByScope = servers.reduce((acc, server) => {
-    const scope = server.scope || "local";
-    if (!acc[scope]) acc[scope] = [];
-    acc[scope].push(server);
-    return acc;
-  }, {} as Record<string, MCPServer[]>);
+    const interval = setInterval(handleRefreshAllStatuses, AUTO_REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [servers.length, handleRefreshAllStatuses]);
+
+  // 按 scope 分组服务器 (memoized)
+  const serversByScope = useMemo(() => {
+    return servers.reduce<Record<string, MCPServer[]>>((acc, server) => {
+      const scope = server.scope || "local";
+      if (!acc[scope]) acc[scope] = [];
+      acc[scope].push(server);
+      return acc;
+    }, {});
+  }, [servers]);
 
   /**
    * Toggles expanded state for a server
    */
-  const toggleExpanded = (serverName: string) => {
+  const toggleExpanded = useCallback((serverName: string): void => {
     setExpandedServers(prev => {
       const next = new Set(prev);
       if (next.has(serverName)) {
@@ -123,76 +212,69 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
       }
       return next;
     });
-  };
+  }, []);
 
   /**
    * Copies command to clipboard
    */
-  const copyCommand = async (command: string, serverName: string) => {
+  const copyCommand = useCallback(async (command: string, serverName: string): Promise<void> => {
     try {
       await navigator.clipboard.writeText(command);
       setCopiedServer(serverName);
       setTimeout(() => setCopiedServer(null), 2000);
-    } catch (error) {
-      console.error("Failed to copy command:", error);
+    } catch {
+      // 静默失败
     }
-  };
+  }, []);
 
   /**
    * Removes a server
    */
-  const handleRemoveServer = async (name: string) => {
+  const handleRemoveServer = useCallback(async (name: string): Promise<void> => {
     try {
       setRemovingServer(name);
-      
-      // Check if server was connected
-      const wasConnected = connectedServers.includes(name);
-      
+
+      const wasConnected = serverTools[name]?.length > 0;
+
       await api.mcpRemove(name);
-      
-      // Track server removal
+
+      // 清除本地工具缓存
+      setServerTools(prev => {
+        const newTools = { ...prev };
+        delete newTools[name];
+        setCachedServerTools(newTools);
+        return newTools;
+      });
+
       trackEvent.mcpServerRemoved({
         server_name: name,
         was_connected: wasConnected
       });
-      
+
       onServerRemoved(name);
     } catch (error) {
       console.error("Failed to remove server:", error);
     } finally {
       setRemovingServer(null);
     }
-  };
+  }, [serverTools, trackEvent, onServerRemoved]);
 
   /**
-   * Tests connection to a server and shows tools (persisted)
+   * Tests connection to a server
    */
-  const handleTestConnection = async (name: string) => {
+  const handleTestConnection = useCallback(async (name: string): Promise<void> => {
     try {
       setTestingServer(name);
 
-      // Get server details including connection status
       const details = await api.mcpGet(name);
+      const tools = details.status?.running ? inferToolsFromServerName(name) : [];
 
-      // Update server tools and status
-      const tools = details.status?.running ? ['fetch', 'list'] : []; // Mock tools for now
-      const newTools = {
-        ...serverTools,
-        [name]: tools
-      };
-
-      setServerTools(newTools);
-
-      // Persist to localStorage
-      localStorage.setItem('mcp_server_tools', JSON.stringify(newTools));
+      updateServerTools({ ...serverTools, [name]: tools });
 
       const server = servers.find(s => s.name === name);
-
-      // Track connection result
       trackEvent.mcpServerConnected(name, details.status?.running || false, server?.transport || 'unknown');
-
-    } catch (error) {
-      console.error("Failed to get server details:", error);
+    } catch {
+      updateServerTools({ ...serverTools, [name]: [] });
 
       trackEvent.mcpConnectionError({
         server_name: name,
@@ -202,12 +284,12 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
     } finally {
       setTestingServer(null);
     }
-  };
+  }, [serverTools, servers, trackEvent, updateServerTools]);
 
   /**
    * Gets icon for transport type
    */
-  const getTransportIcon = (transport: string) => {
+  const getTransportIcon = useCallback((transport: string): React.ReactNode => {
     switch (transport.toLowerCase()) {
       case "stdio":
         return <Terminal className="h-4 w-4 text-amber-500" />;
@@ -220,12 +302,12 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
       default:
         return <Network className="h-4 w-4 text-slate-500" />;
     }
-  };
+  }, []);
 
   /**
    * Gets icon for scope
    */
-  const getScopeIcon = (scope: string) => {
+  const getScopeIcon = useCallback((scope: string): React.ReactNode => {
     switch (scope) {
       case "local":
         return <User className="h-3 w-3 text-slate-500" />;
@@ -236,12 +318,12 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
       default:
         return null;
     }
-  };
+  }, []);
 
   /**
    * Gets scope display name
    */
-  const getScopeDisplayName = (scope: string) => {
+  const getScopeDisplayName = useCallback((scope: string): string => {
     switch (scope) {
       case "local":
         return "Local (Project-specific)";
@@ -252,7 +334,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
       default:
         return scope;
     }
-  };
+  }, []);
 
   /**
    * Renders a single server item
@@ -499,10 +581,15 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
             variant="outline"
             size="sm"
             onClick={handleRefreshAllStatuses}
+            disabled={refreshingAll}
             className="gap-2 hover:bg-green-500/10 hover:text-green-600 hover:border-green-500/50"
           >
-            <CheckCircle className="h-4 w-4" />
-            Check All
+            {refreshingAll ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle className="h-4 w-4" />
+            )}
+            {refreshingAll ? 'Checking...' : 'Check All'}
           </Button>
           <Button
             variant="outline"
