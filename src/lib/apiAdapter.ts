@@ -79,45 +79,65 @@ async function restApiCall<T>(endpoint: string, params?: any): Promise<T> {
       });
     });
   }
-  
+
   const url = new URL(processedEndpoint, window.location.origin);
-  
-  // Add remaining params as query parameters for GET requests (if no placeholders remain)
-  if (params && !processedEndpoint.includes('{')) {
-    Object.keys(params).forEach(key => {
-      // Only add as query param if it wasn't used as a path param
-      if (!endpoint.includes(`{${key}}`) && 
-          !endpoint.includes(`{${key.charAt(0).toLowerCase() + key.slice(1)}}`) &&
-          !endpoint.includes(`{${key.charAt(0).toUpperCase() + key.slice(1)}}`) &&
-          params[key] !== undefined && 
-          params[key] !== null) {
-        url.searchParams.append(key, String(params[key]));
-      }
-    });
-  }
 
   try {
     const response = await fetch(url.toString(), {
-      method: 'GET',
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify(params || {}),
     });
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const result: ApiResponse<T> = await response.json();
-    
-    if (!result.success) {
-      throw new Error(result.error || 'API call failed');
-    }
+    // 检查 Content-Type 并安全解析响应
+    const contentType = response.headers.get('content-type') || '';
 
-    return result.data as T;
+    if (contentType.includes('application/json')) {
+      // JSON 响应 - 按原有逻辑处理
+      const result: ApiResponse<T> = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'API call failed');
+      }
+
+      return result.data as T;
+    } else if (contentType.includes('text/html')) {
+      // HTML 响应 - 可能是错误页面
+      const htmlContent = await response.text();
+
+      // 提取错误信息或使用默认消息
+      let errorMessage = `Server returned HTML instead of JSON (HTTP ${response.status})`;
+
+      // 尝试从 HTML 中提取错误信息
+      const titleMatch = htmlContent.match(/<title>(.*?)<\/title>/i);
+      if (titleMatch) {
+        errorMessage = `${errorMessage}: ${titleMatch[1]}`;
+      }
+
+      throw new Error(errorMessage);
+    } else {
+      // 其他类型 - 尝试作为文本读取
+      const textContent = await response.text();
+      throw new Error(`Unexpected response type: ${contentType}. Response: ${textContent.substring(0, 200)}...`);
+    }
   } catch (error) {
-    console.error(`REST API call failed for ${endpoint}:`, error);
-    throw error;
+    // 改进错误分类和日志记录
+    if (error instanceof SyntaxError && error.message.includes('Unexpected token')) {
+      console.error(`JSON parsing failed for ${endpoint}:`, error);
+      throw new Error(`Failed to parse server response as JSON. The server may have returned an error page instead of API data.`);
+    } else if (error instanceof TypeError && error.message.includes('fetch')) {
+      console.error(`Network error for ${endpoint}:`, error);
+      throw new Error(`Network error: Unable to connect to the server. Please check your connection.`);
+    } else {
+      console.error(`REST API call failed for ${endpoint}:`, error);
+      throw error;
+    }
   }
 }
 

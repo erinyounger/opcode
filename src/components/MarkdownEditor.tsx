@@ -83,7 +83,19 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       console.error("Failed to load CLAUDE.md:", err);
       // If file doesn't exist, start with empty content (allow creation)
       const errorMessage = err instanceof Error ? err.message : String(err);
-      if (errorMessage.includes('not found') || errorMessage.includes('ENOENT') || errorMessage.includes('does not exist')) {
+
+      // 改进错误消息 - 区分不同类型的错误
+      if (errorMessage.includes('Failed to parse server response') ||
+          errorMessage.includes('Unexpected token') ||
+          errorMessage.includes('HTML instead of JSON') ||
+          errorMessage.includes('Failed to parse server response as JSON')) {
+        setError(`Unable to load CLAUDE.md: Server communication error. This may indicate a server-side issue. Please try again later.`);
+      } else if (errorMessage.includes('Network error') ||
+                 errorMessage.includes('Unable to connect to the server')) {
+        setError(`Unable to load CLAUDE.md: Network connection error. Please check your connection and ensure the web server is running.`);
+      } else if (errorMessage.includes('not found') ||
+                 errorMessage.includes('ENOENT') ||
+                 errorMessage.includes('does not exist')) {
         console.log("CLAUDE.md file doesn't exist, starting with empty content");
         if (isProjectMode && projectPath) {
           const separator = projectPath.includes('\\') ? '\\' : '/';
@@ -92,7 +104,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         setContent("");
         setOriginalContent("");
       } else {
-        setError(`Failed to load ${isProjectMode ? 'project' : 'global'} CLAUDE.md file`);
+        setError(`Failed to load ${isProjectMode ? 'project' : 'global'} CLAUDE.md file: ${errorMessage}`);
       }
     } finally {
       setLoading(false);

@@ -62,10 +62,14 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedInstallation, setSelectedInstallation] = useState<ClaudeInstallation | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
-    loadInstallations();
-  }, []);
+    // Only load on first mount, use cache afterwards
+    if (!hasLoaded) {
+      loadInstallations();
+    }
+  }, [hasLoaded]);
 
   useEffect(() => {
     // Update selected installation when selectedPath changes
@@ -77,13 +81,14 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
     }
   }, [selectedPath, installations]);
 
-  const loadInstallations = async () => {
+  const loadInstallations = async (forceRefresh = false) => {
     try {
       setLoading(true);
       setError(null);
-      const foundInstallations = await api.listClaudeInstallations();
+      const foundInstallations = await api.listClaudeInstallations(forceRefresh);
       setInstallations(foundInstallations);
-      
+      setHasLoaded(true); // Mark as loaded to prevent re-loading
+
       // If we have a selected path, find and select it
       if (selectedPath) {
         const found = foundInstallations.find(i => i.path === selectedPath);
@@ -98,6 +103,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
     } catch (err) {
       console.error("Failed to load Claude installations:", err);
       setError(err instanceof Error ? err.message : "Failed to load Claude installations");
+      setHasLoaded(true); // Mark as loaded even on error
     } finally {
       setLoading(false);
     }
@@ -166,7 +172,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
           <Label className="text-sm font-medium">Claude Installation</Label>
           <div className="p-3 border border-destructive/50 rounded-lg bg-destructive/10">
             <p className="text-sm text-destructive mb-2">{error}</p>
-            <Button onClick={loadInstallations} variant="outline" size="sm">
+            <Button onClick={() => loadInstallations(true)} variant="outline" size="sm">
               Retry
             </Button>
           </div>
@@ -181,7 +187,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
         </CardHeader>
         <CardContent>
           <div className="text-sm text-destructive mb-4">{error}</div>
-          <Button onClick={loadInstallations} variant="outline" size="sm">
+          <Button onClick={() => loadInstallations(true)} variant="outline" size="sm">
             Retry
           </Button>
         </CardContent>
@@ -203,11 +209,25 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
               Select which version of Claude to use
             </p>
           </div>
-          {selectedInstallation && (
-            <Badge variant={getInstallationTypeColor(selectedInstallation)} className="text-xs">
-              {selectedInstallation.installation_type}
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={(e) => {
+                e.preventDefault();
+                // Force refresh by clearing cache and reloading
+                loadInstallations(true);
+              }}
+              variant="outline"
+              size="sm"
+              className="text-xs"
+            >
+              Refresh
+            </Button>
+            {selectedInstallation && (
+              <Badge variant={getInstallationTypeColor(selectedInstallation)} className="text-xs">
+                {selectedInstallation.installation_type}
+              </Badge>
+            )}
+          </div>
         </div>
         
         <Select value={selectedInstallation?.path || ""} onValueChange={handleInstallationChange}>

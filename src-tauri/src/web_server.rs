@@ -5,9 +5,10 @@ use axum::http::Method;
 use axum::{
     extract::{Path, State as AxumState, WebSocketUpgrade},
     response::{Html, Json, Response},
-    routing::get,
+    routing::{get, post},
     Router,
 };
+use std::path::PathBuf;
 use chrono;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -128,6 +129,153 @@ async fn get_sessions(
     match commands::claude::get_project_sessions(project_id).await {
         Ok(sessions) => Json(ApiResponse::success(sessions)),
         Err(e) => Json(ApiResponse::error(e.to_string())),
+    }
+}
+
+/// Find CLAUDE.md files in a project
+async fn find_claude_md_files() -> Json<ApiResponse<Vec<serde_json::Value>>> {
+    use std::fs;
+
+    let claude_md_files = find_claude_md_files_recursive(PathBuf::from("."));
+
+    let result: Vec<serde_json::Value> = claude_md_files
+        .into_iter()
+        .map(|path: PathBuf| {
+            if let Ok(metadata) = fs::metadata(&path) {
+                serde_json::json!({
+                    "relative_path": path.strip_prefix(".").unwrap_or(&path).to_string_lossy(),
+                    "absolute_path": path.canonicalize().unwrap_or_default().to_string_lossy(),
+                    "size": metadata.len(),
+                    "modified": metadata.modified().unwrap_or(std::time::SystemTime::now()).duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
+                })
+            } else {
+                serde_json::json!({
+                    "relative_path": path.to_string_lossy(),
+                    "absolute_path": path.to_string_lossy(),
+                    "size": 0,
+                    "modified": 0
+                })
+            }
+        })
+        .collect();
+
+    Json(ApiResponse::success(result))
+}
+
+fn find_claude_md_files_recursive(dir: PathBuf) -> Vec<PathBuf> {
+    use std::fs;
+
+    let mut files = Vec::new();
+
+    if !dir.exists() || !dir.is_dir() {
+        return files;
+    }
+
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            if path.is_dir() {
+                // Skip hidden directories and common build directories
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with('.') || name == "node_modules" || name == "target" || name == "dist" {
+                        continue;
+                    }
+                }
+                files.extend(find_claude_md_files_recursive(path));
+            } else if path.is_file() {
+                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                    if file_name.eq_ignore_ascii_case("CLAUDE.md") {
+                        files.push(path);
+                    }
+                }
+            }
+        }
+    }
+
+    files
+}
+
+/// Read a CLAUDE.md file
+async fn read_claude_md_file(
+    Json(payload): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    use std::fs;
+    use std::path::Path;
+
+    let file_path = payload
+        .get("filePath")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if file_path.is_empty() {
+        return Json(ApiResponse::error("filePath is required".to_string()));
+    }
+
+    let path = Path::new(file_path);
+    if !path.exists() {
+        return Json(ApiResponse::error(format!("File not found: {}", file_path)));
+    }
+
+    if !path.is_file() {
+        return Json(ApiResponse::error(format!("Path is not a file: {}", file_path)));
+    }
+
+    match fs::read_to_string(path) {
+        Ok(content) => Json(ApiResponse::success(content)),
+        Err(e) => Json(ApiResponse::error(format!(
+            "Failed to read file: {}",
+            e
+        ))),
+    }
+}
+
+/// Save a CLAUDE.md file
+async fn save_claude_md_file(
+    Json(payload): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    use std::fs;
+    use std::path::Path;
+
+    let file_path = payload
+        .get("filePath")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let content = payload
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if file_path.is_empty() {
+        return Json(ApiResponse::error("filePath is required".to_string()));
+    }
+
+    if content.is_empty() {
+        return Json(ApiResponse::error("content is required".to_string()));
+    }
+
+    let path = Path::new(file_path);
+
+    // Create parent directory if it doesn't exist
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                return Json(ApiResponse::error(format!(
+                    "Failed to create directory: {}",
+                    e
+                )));
+            }
+        }
+    }
+
+    match fs::write(path, content) {
+        Ok(_) => Json(ApiResponse::success(
+            "File saved successfully".to_string(),
+        )),
+        Err(e) => Json(ApiResponse::error(format!(
+            "Failed to write file: {}",
+            e
+        ))),
     }
 }
 
@@ -808,6 +956,10 @@ pub async fn create_web_server(port: u16) -> Result<(), Box<dyn std::error::Erro
         .route("/api/projects", get(get_projects))
         .route("/api/projects/{project_id}/sessions", get(get_sessions))
         .route("/api/agents", get(get_agents))
+        // Claude.md files
+        .route("/api/claude-md", get(find_claude_md_files))
+        .route("/api/claude-md/read", post(read_claude_md_file))
+        .route("/api/claude-md/save", post(save_claude_md_file))
         // Settings and configuration
         .route("/api/settings/claude", get(get_claude_settings))
         .route("/api/settings/claude/version", get(check_claude_version))

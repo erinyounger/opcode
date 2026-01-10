@@ -6,4 +6,5 @@ pub mod slash_commands;
 pub mod skills;
 pub mod storage;
 pub mod terminal;
+pub mod usage;
 pub mod version;

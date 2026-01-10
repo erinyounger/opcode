@@ -48,6 +48,9 @@ use commands::storage::{
     storage_read_table, storage_reset_database, storage_update_row,
 };
 use commands::version::{get_app_version, get_version_info};
+use commands::usage::{
+    get_session_stats, get_usage_by_date_range, get_usage_details, get_usage_stats,
+};
 use process::ProcessRegistryState;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -267,6 +270,11 @@ fn main() {
             fetch_github_agents,
             fetch_github_agent_content,
             import_agent_from_github,
+            // Usage & Analytics
+            get_usage_stats,
+            get_usage_by_date_range,
+            get_usage_details,
+            get_session_stats,
             // MCP (Model Context Protocol)
             mcp_add,
             mcp_list,

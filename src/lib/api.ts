@@ -496,6 +496,13 @@ export interface AddServerResult {
  * API client for interacting with the Rust backend
  */
 export const api = {
+  // Cache for Claude installations
+  _claudeInstallationsCache: {
+    data: null as ClaudeInstallation[] | null,
+    timestamp: 0,
+    ttl: 5 * 60 * 1000, // 5 minutes cache
+  },
+
   /**
    * Gets the user's home directory path
    * @returns Promise resolving to the home directory path
@@ -1731,11 +1738,32 @@ export const api = {
 
   /**
    * List all available Claude installations on the system
+   * Uses caching to avoid repeated checks (cache expires after 5 minutes)
    * @returns Promise resolving to an array of Claude installations
    */
-  async listClaudeInstallations(): Promise<ClaudeInstallation[]> {
+  async listClaudeInstallations(forceRefresh = false): Promise<ClaudeInstallation[]> {
     try {
-      return await apiCall<ClaudeInstallation[]>("list_claude_installations");
+      const now = Date.now();
+
+      // Return cached data if it's still valid and not forcing refresh
+      if (!forceRefresh && this._claudeInstallationsCache.data &&
+          (now - this._claudeInstallationsCache.timestamp) < this._claudeInstallationsCache.ttl) {
+        console.log("Using cached Claude installations");
+        return this._claudeInstallationsCache.data;
+      }
+
+      // Fetch fresh data
+      console.log("Fetching fresh Claude installations");
+      const installations = await apiCall<ClaudeInstallation[]>("list_claude_installations");
+
+      // Update cache
+      this._claudeInstallationsCache = {
+        data: installations,
+        timestamp: now,
+        ttl: this._claudeInstallationsCache.ttl,
+      };
+
+      return installations;
     } catch (error) {
       console.error("Failed to list Claude installations:", error);
       throw error;
