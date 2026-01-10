@@ -2,13 +2,13 @@
  * ProjectSettings component for managing project-specific hooks configuration
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { HooksEditor } from '@/components/HooksEditor';
 import { SlashCommandsManager } from '@/components/SlashCommandsManager';
 import { api } from '@/lib/api';
-import { 
-  AlertTriangle, 
-  ArrowLeft, 
+import {
+  AlertTriangle,
+  ArrowLeft,
   Settings,
   FolderOpen,
   GitBranch,
@@ -22,61 +22,240 @@ import { cn } from '@/lib/utils';
 import { Toast, ToastContainer } from '@/components/ui/toast';
 import type { Project } from '@/lib/api';
 
+// Constants
+const SETTINGS_FILE_PATHS = {
+  project: '.claude/settings.json',
+  local: '.claude/settings.local.json',
+} as const;
+
+const TAB_CONFIG = [
+  {
+    id: 'commands',
+    label: 'Slash Commands',
+    icon: Command,
+    description: 'Custom commands specific to this project',
+    path: '.claude/slash-commands/',
+  },
+  {
+    id: 'project',
+    label: 'Project Hooks',
+    icon: GitBranch,
+    description: 'Hooks for all project users',
+    path: SETTINGS_FILE_PATHS.project,
+  },
+  {
+    id: 'local',
+    label: 'Local Hooks',
+    icon: Shield,
+    description: 'Machine-specific hooks',
+    path: SETTINGS_FILE_PATHS.local,
+  },
+] as const;
+
+type TabId = typeof TAB_CONFIG[number]['id'];
+type ToastMessage = { message: string; type: 'success' | 'error' };
+
 interface ProjectSettingsProps {
   project: Project;
   onBack: () => void;
   className?: string;
 }
 
-export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
-  project,
-  onBack,
-  className
-}) => {
-  const [activeTab, setActiveTab] = useState('commands');
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  
-  // Other hooks settings
-  const [gitIgnoreLocal, setGitIgnoreLocal] = useState(true);
+// Custom Hooks
+const useGitIgnore = (projectPath: string) => {
+  const [isIgnored, setIsIgnored] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    checkGitIgnore();
-  }, [project]);
-
-  const checkGitIgnore = async () => {
+  const checkGitIgnore = useCallback(async () => {
+    setIsLoading(true);
     try {
-      // Check if .claude/settings.local.json is in .gitignore
-      const gitignorePath = `${project.path}/.gitignore`;
-      const gitignoreContent = await api.readClaudeMdFile(gitignorePath);
-      setGitIgnoreLocal(gitignoreContent.includes('.claude/settings.local.json'));
+      const gitignorePath = `${projectPath}/.gitignore`;
+      const gitignoreContent = await api.readTextFile(gitignorePath);
+      setIsIgnored(gitignoreContent.includes(SETTINGS_FILE_PATHS.local));
     } catch {
-      // .gitignore might not exist
-      setGitIgnoreLocal(false);
+      setIsIgnored(false);
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [projectPath]);
 
-  const addToGitIgnore = async () => {
+  const addToGitIgnore = useCallback(async () => {
     try {
-      const gitignorePath = `${project.path}/.gitignore`;
+      const gitignorePath = `${projectPath}/.gitignore`;
       let content = '';
-      
+
       try {
-        content = await api.readClaudeMdFile(gitignorePath);
+        content = await api.readTextFile(gitignorePath);
       } catch {
         // File doesn't exist, create it
       }
-      
-      if (!content.includes('.claude/settings.local.json')) {
-        content += '\n# Claude local settings (machine-specific)\n.claude/settings.local.json\n';
+
+      if (!content.includes(SETTINGS_FILE_PATHS.local)) {
+        content += `\n# Claude local settings (machine-specific)\n${SETTINGS_FILE_PATHS.local}\n`;
         await api.saveClaudeMdFile(gitignorePath, content);
-        setGitIgnoreLocal(true);
-        setToast({ message: 'Added to .gitignore', type: 'success' });
+        setIsIgnored(true);
+        return { success: true, message: 'Added to .gitignore' };
       }
+
+      return { success: false, message: 'Already in .gitignore' };
     } catch (err) {
       console.error('Failed to update .gitignore:', err);
-      setToast({ message: 'Failed to update .gitignore', type: 'error' });
+      return { success: false, message: 'Failed to update .gitignore' };
     }
-  };
+  }, [projectPath]);
+
+  useEffect(() => {
+    checkGitIgnore();
+  }, [checkGitIgnore]);
+
+  return { isIgnored, isLoading, checkGitIgnore, addToGitIgnore };
+};
+
+const useToast = () => {
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+  }, []);
+
+  const hideToast = useCallback(() => {
+    setToast(null);
+  }, []);
+
+  // Auto-hide toast after 3 seconds
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  return { toast, showToast, hideToast };
+};
+
+// Sub-components
+interface SettingsCardProps {
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}
+
+const SettingsCard: React.FC<SettingsCardProps> = ({ title, description, children }) => (
+  <Card className="p-6">
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold mb-2">{title}</h3>
+        <p className="text-sm text-muted-foreground mb-4">{description}</p>
+      </div>
+      {children}
+    </div>
+  </Card>
+);
+
+interface GitIgnoreWarningProps {
+  isIgnored: boolean;
+  isLoading: boolean;
+  onAddToGitIgnore: () => Promise<{ success: boolean; message?: string }>;
+  onShowToast: (message: string, type: 'success' | 'error') => void;
+}
+
+const GitIgnoreWarning: React.FC<GitIgnoreWarningProps> = ({
+  isIgnored,
+  isLoading,
+  onAddToGitIgnore,
+  onShowToast,
+}) => {
+  const handleAddToGitIgnore = useCallback(async () => {
+    const result = await onAddToGitIgnore();
+    onShowToast(result.message || '', result.success ? 'success' : 'error');
+  }, [onAddToGitIgnore, onShowToast]);
+
+  if (isLoading || isIgnored) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-4 p-3 bg-yellow-500/10 rounded-md">
+      <AlertTriangle className="h-5 w-5 text-yellow-600" />
+      <div className="flex-1">
+        <p className="text-sm text-yellow-600">Local settings file is not in .gitignore</p>
+      </div>
+      <Button size="sm" variant="outline" onClick={handleAddToGitIgnore}>
+        Add to .gitignore
+      </Button>
+    </div>
+  );
+};
+
+export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
+  project,
+  onBack,
+  className,
+}) => {
+  const [activeTab, setActiveTab] = useState<TabId>('commands');
+  const { toast, showToast, hideToast } = useToast();
+  const { isIgnored: gitIgnoreLocal, isLoading: gitIgnoreLoading, addToGitIgnore } = useGitIgnore(project.path);
+
+  const handleTabChange = useCallback((tabId: string) => {
+    setActiveTab(tabId as TabId);
+  }, []);
+
+  const renderTabContent = useMemo(() => {
+    const tabMap: Record<TabId, JSX.Element> = {
+      commands: (
+        <SettingsCard
+          title="Project Slash Commands"
+          description={
+            <>
+              Custom commands that are specific to this project. These commands are stored in
+              <code className="mx-1 px-2 py-1 bg-muted rounded text-xs">{TAB_CONFIG[0].path}</code>
+              and can be committed to version control.
+            </>
+          }
+        >
+          <SlashCommandsManager projectPath={project.path} scopeFilter="project" />
+        </SettingsCard>
+      ),
+      project: (
+        <SettingsCard
+          title="Project Hooks"
+          description={
+            <>
+              These hooks apply to all users working on this project. They are stored in
+              <code className="mx-1 px-2 py-1 bg-muted rounded text-xs">{SETTINGS_FILE_PATHS.project}</code>
+              and should be committed to version control.
+            </>
+          }
+        >
+          <HooksEditor projectPath={project.path} scope="project" />
+        </SettingsCard>
+      ),
+      local: (
+        <SettingsCard
+          title="Local Hooks"
+          description={
+            <>
+              These hooks only apply to your machine. They are stored in
+              <code className="mx-1 px-2 py-1 bg-muted rounded text-xs">{SETTINGS_FILE_PATHS.local}</code>
+              and should NOT be committed to version control.
+            </>
+          }
+        >
+          <GitIgnoreWarning
+            isIgnored={gitIgnoreLocal}
+            isLoading={gitIgnoreLoading}
+            onAddToGitIgnore={addToGitIgnore}
+            onShowToast={showToast}
+          />
+          <HooksEditor projectPath={project.path} scope="local" />
+        </SettingsCard>
+      ),
+    };
+
+    return tabMap;
+  }, [project.path, gitIgnoreLocal, gitIgnoreLoading, addToGitIgnore, showToast]);
 
   return (
     <div className={cn("flex flex-col h-full", className)}>
@@ -94,7 +273,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
             </div>
           </div>
         </div>
-        
+
         <div className="mt-4 flex items-center gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <FolderOpen className="h-4 w-4" />
@@ -106,98 +285,26 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="mb-6">
-              <TabsTrigger value="commands" className="gap-2">
-                <Command className="h-4 w-4" />
-                Slash Commands
-              </TabsTrigger>
-              <TabsTrigger value="project" className="gap-2">
-                <GitBranch className="h-4 w-4" />
-                Project Hooks
-              </TabsTrigger>
-              <TabsTrigger value="local" className="gap-2">
-                <Shield className="h-4 w-4" />
-                Local Hooks
-              </TabsTrigger>
+              {TAB_CONFIG.map(({ id, label, icon: Icon }) => (
+                <TabsTrigger key={id} value={id} className="gap-2">
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </TabsTrigger>
+              ))}
             </TabsList>
 
             <TabsContent value="commands" className="space-y-6">
-              <Card className="p-6">
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">Project Slash Commands</h3>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Custom commands that are specific to this project. These commands are stored in
-                      <code className="mx-1 px-2 py-1 bg-muted rounded text-xs">.claude/slash-commands/</code>
-                      and can be committed to version control.
-                    </p>
-                  </div>
-                  
-                  <SlashCommandsManager
-                    projectPath={project.path}
-                    scopeFilter="project"
-                  />
-                </div>
-              </Card>
+              {renderTabContent.commands}
             </TabsContent>
 
             <TabsContent value="project" className="space-y-6">
-              <Card className="p-6">
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">Project Hooks</h3>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      These hooks apply to all users working on this project. They are stored in
-                      <code className="mx-1 px-2 py-1 bg-muted rounded text-xs">.claude/settings.json</code>
-                      and should be committed to version control.
-                    </p>
-                  </div>
-                  
-                  <HooksEditor
-                    projectPath={project.path}
-                    scope="project"
-                  />
-                </div>
-              </Card>
+              {renderTabContent.project}
             </TabsContent>
 
             <TabsContent value="local" className="space-y-6">
-              <Card className="p-6">
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">Local Hooks</h3>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      These hooks only apply to your machine. They are stored in
-                      <code className="mx-1 px-2 py-1 bg-muted rounded text-xs">.claude/settings.local.json</code>
-                      and should NOT be committed to version control.
-                    </p>
-                    
-                    {!gitIgnoreLocal && (
-                      <div className="flex items-center gap-4 p-3 bg-yellow-500/10 rounded-md">
-                        <AlertTriangle className="h-5 w-5 text-yellow-600" />
-                        <div className="flex-1">
-                          <p className="text-sm text-yellow-600">
-                            Local settings file is not in .gitignore
-                          </p>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={addToGitIgnore}
-                        >
-                          Add to .gitignore
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <HooksEditor
-                    projectPath={project.path}
-                    scope="local"
-                  />
-                </div>
-              </Card>
+              {renderTabContent.local}
             </TabsContent>
           </Tabs>
         </div>
@@ -209,7 +316,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
           <Toast
             message={toast.message}
             type={toast.type}
-            onDismiss={() => setToast(null)}
+            onDismiss={hideToast}
           />
         )}
       </ToastContainer>

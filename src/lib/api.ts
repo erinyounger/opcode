@@ -649,6 +649,20 @@ export const api = {
   },
 
   /**
+   * Get project CLAUDE.md prompt content
+   * @param projectPath - Path to the project directory
+   * @returns Promise resolving to the project CLAUDE.md content
+   */
+  async getProjectPrompt(projectPath: string): Promise<string> {
+    try {
+      return await apiCall<string>("get_project_prompt", { projectPath });
+    } catch (error) {
+      console.error("Failed to get project prompt:", error);
+      throw error;
+    }
+  },
+
+  /**
    * Gets the current working directory
    */
   async getCurrentWorkingDirectory(): Promise<string> {

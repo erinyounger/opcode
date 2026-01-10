@@ -1023,6 +1023,29 @@ pub async fn get_system_prompt() -> Result<String, String> {
     fs::read_to_string(&claude_md_path).map_err(|e| format!("Failed to read CLAUDE.md: {}", e))
 }
 
+/// Reads the CLAUDE.md project prompt file
+#[tauri::command]
+pub async fn get_project_prompt(project_path: String) -> Result<String, String> {
+    log::info!("Reading project CLAUDE.md prompt for: {}", project_path);
+
+    let path = PathBuf::from(&project_path);
+    if !path.exists() {
+        return Err(format!("Project path does not exist: {}", project_path));
+    }
+
+    // 查找根目录下的 CLAUDE.md 文件
+    let claude_md_path = path.join("CLAUDE.md");
+
+    if !claude_md_path.exists() {
+        // 文件不存在时返回空字符串，允许用户创建
+        log::info!("CLAUDE.md not found in project root, returning empty string");
+        return Ok(String::new());
+    }
+
+    fs::read_to_string(&claude_md_path)
+        .map_err(|e| format!("Failed to read CLAUDE.md: {}", e))
+}
+
 /// Checks if Claude Code is installed and gets its version
 #[tauri::command]
 pub async fn check_claude_version(app: AppHandle) -> Result<ClaudeVersionStatus, String> {

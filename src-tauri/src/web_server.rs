@@ -133,28 +133,39 @@ async fn get_sessions(
 }
 
 /// Find CLAUDE.md files in a project
-async fn find_claude_md_files() -> Json<ApiResponse<Vec<serde_json::Value>>> {
+async fn find_claude_md_files(
+    Json(payload): Json<serde_json::Value>,
+) -> Json<ApiResponse<Vec<serde_json::Value>>> {
     use std::fs;
 
-    let claude_md_files = find_claude_md_files_recursive(PathBuf::from("."));
+    let project_path = payload
+        .get("projectPath")
+        .and_then(|v| v.as_str())
+        .unwrap_or(".");
+
+    let search_path = if project_path.is_empty() || project_path == "." {
+        PathBuf::from(".")
+    } else {
+        PathBuf::from(project_path)
+    };
+
+    let claude_md_files = find_claude_md_files_recursive(search_path.clone());
 
     let result: Vec<serde_json::Value> = claude_md_files
         .into_iter()
-        .map(|path: PathBuf| {
+        .filter_map(|path: PathBuf| {
             if let Ok(metadata) = fs::metadata(&path) {
-                serde_json::json!({
-                    "relative_path": path.strip_prefix(".").unwrap_or(&path).to_string_lossy(),
-                    "absolute_path": path.canonicalize().unwrap_or_default().to_string_lossy(),
+                let relative_path = path.strip_prefix(&search_path).unwrap_or(&path).to_string_lossy().to_string();
+                let absolute_path = path.canonicalize().unwrap_or_default().to_string_lossy().to_string();
+
+                Some(serde_json::json!({
+                    "relative_path": relative_path,
+                    "absolute_path": absolute_path,
                     "size": metadata.len(),
                     "modified": metadata.modified().unwrap_or(std::time::SystemTime::now()).duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
-                })
+                }))
             } else {
-                serde_json::json!({
-                    "relative_path": path.to_string_lossy(),
-                    "absolute_path": path.to_string_lossy(),
-                    "size": 0,
-                    "modified": 0
-                })
+                None
             }
         })
         .collect();
@@ -274,6 +285,44 @@ async fn save_claude_md_file(
         )),
         Err(e) => Json(ApiResponse::error(format!(
             "Failed to write file: {}",
+            e
+        ))),
+    }
+}
+
+/// Get project CLAUDE.md prompt
+async fn get_project_prompt(
+    Json(payload): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    use std::fs;
+    use std::path::PathBuf;
+
+    let project_path = payload
+        .get("projectPath")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if project_path.is_empty() {
+        return Json(ApiResponse::error("projectPath is required".to_string()));
+    }
+
+    let path = PathBuf::from(project_path);
+    if !path.exists() {
+        return Json(ApiResponse::error(format!("Project path does not exist: {}", project_path)));
+    }
+
+    // 查找根目录下的 CLAUDE.md 文件
+    let claude_md_path = path.join("CLAUDE.md");
+
+    if !claude_md_path.exists() {
+        // 文件不存在时返回空字符串
+        return Json(ApiResponse::success(String::new()));
+    }
+
+    match fs::read_to_string(&claude_md_path) {
+        Ok(content) => Json(ApiResponse::success(content)),
+        Err(e) => Json(ApiResponse::error(format!(
+            "Failed to read file: {}",
             e
         ))),
     }
@@ -957,9 +1006,10 @@ pub async fn create_web_server(port: u16) -> Result<(), Box<dyn std::error::Erro
         .route("/api/projects/{project_id}/sessions", get(get_sessions))
         .route("/api/agents", get(get_agents))
         // Claude.md files
-        .route("/api/claude-md", get(find_claude_md_files))
+        .route("/api/claude-md", post(find_claude_md_files))
         .route("/api/claude-md/read", post(read_claude_md_file))
         .route("/api/claude-md/save", post(save_claude_md_file))
+        .route("/api/project-prompt", post(get_project_prompt))
         // Settings and configuration
         .route("/api/settings/claude", get(get_claude_settings))
         .route("/api/settings/claude/version", get(check_claude_version))
