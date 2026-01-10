@@ -947,7 +947,7 @@ pub async fn create_web_server(port: u16) -> Result<(), Box<dyn std::error::Erro
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers(Any);
 
-    // Create router with API endpoints
+    // Create main router
     let app = Router::new()
         // Frontend routes
         .route("/", get(serve_frontend))

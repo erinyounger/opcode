@@ -53,20 +53,29 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     try {
       setLoading(true);
       setError(null);
-      
+
+      // Check if we're in web mode (no Tauri)
+      const isWebMode = !window.__TAURI__;
+
       if (isProjectMode) {
-        // Find CLAUDE.md in project root directory
+        // In web mode, project CLAUDE.md is not accessible due to browser security restrictions
+        if (isWebMode) {
+          setError("Project CLAUDE.md editing is not available in web mode. Please use the desktop app (Tauri) to edit project files.");
+          setContent("");
+          setOriginalContent("");
+          return;
+        }
+
+        // Tauri mode - access project files directly
         const files = await api.findClaudeMdFiles(projectPath);
         const rootClaudeMd = files.find(f => f.relative_path === "CLAUDE.md" || f.relative_path === ".\\CLAUDE.md" || f.relative_path === "./CLAUDE.md");
-        
+
         if (rootClaudeMd) {
-          // File exists, load it
           const fileContent = await api.readClaudeMdFile(rootClaudeMd.absolute_path);
           setClaudeMdFilePath(rootClaudeMd.absolute_path);
           setContent(fileContent);
           setOriginalContent(fileContent);
         } else {
-          // File doesn't exist, start with empty content and construct path
           const separator = projectPath.includes('\\') ? '\\' : '/';
           const newFilePath = `${projectPath}${separator}CLAUDE.md`;
           setClaudeMdFilePath(newFilePath);
@@ -74,17 +83,15 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           setOriginalContent("");
         }
       } else {
-        // Global mode
+        // Global mode - works in both web and Tauri mode
         const prompt = await api.getSystemPrompt();
         setContent(prompt);
         setOriginalContent(prompt);
       }
     } catch (err) {
       console.error("Failed to load CLAUDE.md:", err);
-      // If file doesn't exist, start with empty content (allow creation)
       const errorMessage = err instanceof Error ? err.message : String(err);
 
-      // 改进错误消息 - 区分不同类型的错误
       if (errorMessage.includes('Failed to parse server response') ||
           errorMessage.includes('Unexpected token') ||
           errorMessage.includes('HTML instead of JSON') ||
@@ -116,8 +123,15 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       setSaving(true);
       setError(null);
       setToast(null);
-      
+
+      // Check if we're in web mode
+      const isWebMode = !window.__TAURI__;
+
       if (isProjectMode) {
+        if (isWebMode) {
+          throw new Error("Project CLAUDE.md editing is not available in web mode. Please use the desktop app (Tauri) to edit project files.");
+        }
+
         if (!claudeMdFilePath) {
           throw new Error("File path not set");
         }
@@ -125,12 +139,13 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       } else {
         await api.saveSystemPrompt(content);
       }
-      
+
       setOriginalContent(content);
       setToast({ message: "CLAUDE.md saved successfully", type: "success" });
     } catch (err) {
       console.error("Failed to save CLAUDE.md:", err);
-      setError(`Failed to save ${isProjectMode ? 'project' : 'global'} CLAUDE.md file`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
       setToast({ message: "Failed to save CLAUDE.md", type: "error" });
     } finally {
       setSaving(false);
