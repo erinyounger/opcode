@@ -136,11 +136,6 @@ async fn get_agents() -> Json<ApiResponse<Vec<serde_json::Value>>> {
     Json(ApiResponse::success(vec![]))
 }
 
-/// Simple usage endpoint - return empty for now
-async fn get_usage() -> Json<ApiResponse<Vec<serde_json::Value>>> {
-    Json(ApiResponse::success(vec![]))
-}
-
 /// Get Claude settings - return basic defaults for web mode
 async fn get_claude_settings() -> Json<ApiResponse<serde_json::Value>> {
     let default_settings = serde_json::json!({
@@ -813,7 +808,6 @@ pub async fn create_web_server(port: u16) -> Result<(), Box<dyn std::error::Erro
         .route("/api/projects", get(get_projects))
         .route("/api/projects/{project_id}/sessions", get(get_sessions))
         .route("/api/agents", get(get_agents))
-        .route("/api/usage", get(get_usage))
         // Settings and configuration
         .route("/api/settings/claude", get(get_claude_settings))
         .route("/api/settings/claude/version", get(check_claude_version))

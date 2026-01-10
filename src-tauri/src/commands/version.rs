@@ -1,8 +1,8 @@
-use tauri::{Manager, State};
 
 /// 获取应用程序版本号
 /// 从 Cargo.toml 中读取版本信息
 #[tauri::command]
+#[allow(dead_code)]
 pub async fn get_app_version() -> Result<String, String> {
     // 从环境变量中获取版本号（由构建脚本设置）
     // 或者从 Cargo.toml 读取
@@ -13,6 +13,7 @@ pub async fn get_app_version() -> Result<String, String> {
 
 /// 获取详细的版本信息
 #[tauri::command]
+#[allow(dead_code)]
 pub async fn get_version_info() -> Result<serde_json::Value, String> {
     let version = env!("CARGO_PKG_VERSION").to_string();
     let name = env!("CARGO_PKG_NAME").to_string();
@@ -32,6 +33,7 @@ pub async fn get_version_info() -> Result<serde_json::Value, String> {
 }
 
 /// 构建时设置的版本信息（用于动态显示）
+#[allow(dead_code)]
 pub fn register_version_commands() {
     println!("Version commands registered");
 }

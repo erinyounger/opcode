@@ -4,6 +4,11 @@ import type { StateCreator } from 'zustand';
 import { api } from '@/lib/api';
 import type { Session, Project } from '@/lib/api';
 
+// Constants for memory management
+const MAX_SESSIONS_PER_PROJECT = 500;
+const MAX_SESSION_OUTPUTS = 500;
+const MAX_OUTPUT_LENGTH = 10000;
+
 interface SessionState {
   // Projects and sessions data
   projects: Project[];
@@ -62,22 +67,28 @@ const sessionStore: StateCreator<
       }
     },
     
-    // Fetch sessions for a specific project
+    // Fetch sessions for a specific project with memory management
     fetchProjectSessions: async (projectId: string) => {
       set({ isLoadingSessions: true, error: null });
       try {
         const projectSessions = await api.getProjectSessions(projectId);
+
+        // Apply memory limit to sessions per project
+        const trimmedSessions = projectSessions.length > MAX_SESSIONS_PER_PROJECT
+          ? projectSessions.slice(-MAX_SESSIONS_PER_PROJECT)
+          : projectSessions;
+
         set((state) => ({
           sessions: {
             ...state.sessions,
-            [projectId]: projectSessions
+            [projectId]: trimmedSessions
           },
           isLoadingSessions: false
         }));
       } catch (error) {
-        set({ 
+        set({
           error: error instanceof Error ? error.message : 'Failed to fetch sessions',
-          isLoadingSessions: false 
+          isLoadingSessions: false
         });
       }
     },
@@ -101,22 +112,46 @@ const sessionStore: StateCreator<
       set({ currentSessionId: sessionId, currentSession });
     },
     
-    // Fetch session output
+    // Fetch session output with memory management
     fetchSessionOutput: async (sessionId: string) => {
       set({ isLoadingOutputs: true, error: null });
       try {
         const output = await api.getClaudeSessionOutput(sessionId);
-        set((state) => ({
-          sessionOutputs: {
-            ...state.sessionOutputs,
-            [sessionId]: output
-          },
-          isLoadingOutputs: false
-        }));
+
+        // Apply output length limit to prevent memory bloat
+        const trimmedOutput = output.length > MAX_OUTPUT_LENGTH
+          ? output.slice(-MAX_OUTPUT_LENGTH)
+          : output;
+
+        set((state) => {
+          // Limit session outputs cache size
+          const currentOutputs = state.sessionOutputs;
+          const updatedOutputs = {
+            ...currentOutputs,
+            [sessionId]: trimmedOutput
+          };
+
+          // If exceeding max size, remove oldest entries
+          const outputEntries = Object.entries(updatedOutputs);
+          if (outputEntries.length > MAX_SESSION_OUTPUTS) {
+            const sortedEntries = outputEntries
+              .sort(([a], [b]) => a.localeCompare(b))
+              .slice(-MAX_SESSION_OUTPUTS);
+            return {
+              sessionOutputs: Object.fromEntries(sortedEntries),
+              isLoadingOutputs: false
+            };
+          }
+
+          return {
+            sessionOutputs: updatedOutputs,
+            isLoadingOutputs: false
+          };
+        });
       } catch (error) {
-        set({ 
+        set({
           error: error instanceof Error ? error.message : 'Failed to fetch session output',
-          isLoadingOutputs: false 
+          isLoadingOutputs: false
         });
       }
     },
@@ -150,13 +185,13 @@ const sessionStore: StateCreator<
     // Clear error
     clearError: () => set({ error: null }),
     
-    // Handle session update
+    // Handle session update with memory management
     handleSessionUpdate: (session: Session) => {
-      set(state => {
+      set((state) => {
         const projectId = session.project_id;
         const projectSessions = state.sessions[projectId] || [];
         const existingIndex = projectSessions.findIndex((s) => s.id === session.id);
-        
+
         let updatedSessions;
         if (existingIndex >= 0) {
           updatedSessions = [...projectSessions];
@@ -164,25 +199,52 @@ const sessionStore: StateCreator<
         } else {
           updatedSessions = [session, ...projectSessions];
         }
-        
+
+        // Apply memory limit to sessions per project
+        const trimmedSessions = updatedSessions.length > MAX_SESSIONS_PER_PROJECT
+          ? updatedSessions.slice(-MAX_SESSIONS_PER_PROJECT)
+          : updatedSessions;
+
         return {
           sessions: {
             ...state.sessions,
-            [projectId]: updatedSessions
+            [projectId]: trimmedSessions
           },
           currentSession: state.currentSessionId === session.id ? session : state.currentSession
         };
       });
     },
     
-    // Handle output update
+    // Handle output update with memory management
     handleOutputUpdate: (sessionId: string, output: string) => {
-      set((state) => ({
-        sessionOutputs: {
-          ...state.sessionOutputs,
-          [sessionId]: output
+      // Apply output length limit
+      const trimmedOutput = output.length > MAX_OUTPUT_LENGTH
+        ? output.slice(-MAX_OUTPUT_LENGTH)
+        : output;
+
+      set((state) => {
+        // Limit session outputs cache size
+        const currentOutputs = state.sessionOutputs;
+        const updatedOutputs = {
+          ...currentOutputs,
+          [sessionId]: trimmedOutput
+        };
+
+        // If exceeding max size, remove oldest entries
+        const outputEntries = Object.entries(updatedOutputs);
+        if (outputEntries.length > MAX_SESSION_OUTPUTS) {
+          const sortedEntries = outputEntries
+            .sort(([a], [b]) => a.localeCompare(b))
+            .slice(-MAX_SESSION_OUTPUTS);
+          return {
+            sessionOutputs: Object.fromEntries(sortedEntries)
+          };
         }
-      }));
+
+        return {
+          sessionOutputs: updatedOutputs
+        };
+      });
     }
   });
 

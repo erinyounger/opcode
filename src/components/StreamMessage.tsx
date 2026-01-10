@@ -59,6 +59,9 @@ const TOOLS_WITH_WIDGETS = [
 const CODE_COLLAPSE_THRESHOLD = 15;
 const CODE_COLLAPSED_HEIGHT = '300px';
 
+// Memory management constants
+const MAX_CONTENT_LENGTH = 10000;
+
 interface CodeBlockProps {
   language: string;
   code: string;
@@ -290,23 +293,28 @@ function extractToolResults(streamMessages: ClaudeStreamMessage[]): Map<string, 
 }
 
 function extractContentText(content: any): string {
-  if (typeof content.content === 'string') {
-    return content.content;
-  }
+  let text = '';
 
-  if (content.content && typeof content.content === 'object') {
+  if (typeof content.content === 'string') {
+    text = content.content;
+  } else if (content.content && typeof content.content === 'object') {
     if (content.content.text) {
-      return content.content.text;
-    }
-    if (Array.isArray(content.content)) {
-      return content.content
+      text = content.content.text;
+    } else if (Array.isArray(content.content)) {
+      text = content.content
         .map((c: any) => (typeof c === 'string' ? c : c.text || JSON.stringify(c)))
         .join('\n');
+    } else {
+      text = JSON.stringify(content.content, null, 2);
     }
-    return JSON.stringify(content.content, null, 2);
   }
 
-  return '';
+  // Apply length limit to prevent memory bloat
+  if (text.length > MAX_CONTENT_LENGTH) {
+    return text.slice(-MAX_CONTENT_LENGTH);
+  }
+
+  return text;
 }
 
 function findToolUseInMessages(

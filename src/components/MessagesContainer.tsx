@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ClaudeStreamMessage } from "./AgentExecution";
@@ -16,7 +16,31 @@ interface MessagesContainerProps {
   className?: string;
 }
 
-export const MessagesContainer: React.FC<MessagesContainerProps> = ({
+// Memoized virtual item component to prevent unnecessary re-renders
+const VirtualizedItem = React.memo<{
+  message: ClaudeStreamMessage;
+  allMessages: ClaudeStreamMessage[];
+  virtualItem: any;
+  measureElement: (el: HTMLElement | null) => void;
+}>(({ message, allMessages, virtualItem, measureElement }) => {
+  return (
+    <motion.div
+      key={virtualItem.key}
+      ref={(el) => el && measureElement(el)}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.15 }} // Reduced duration for faster animations
+      className="absolute inset-x-4 pb-4"
+      style={{ top: virtualItem.start }}
+    >
+      <ErrorBoundary>
+        <StreamMessage message={message} streamMessages={allMessages} />
+      </ErrorBoundary>
+    </motion.div>
+  );
+});
+
+const MessagesContainerComponent: React.FC<MessagesContainerProps> = ({
   messages,
   scrollRef,
   onScroll,
@@ -25,13 +49,18 @@ export const MessagesContainer: React.FC<MessagesContainerProps> = ({
   LoadingComponent,
   className,
 }) => {
-  const displayableMessages = getDisplayableMessages(messages);
+  // Memoize displayable messages to prevent unnecessary recalculations
+  const displayableMessages = useMemo(
+    () => getDisplayableMessages(messages),
+    [messages]
+  );
 
+  // Optimize virtualizer with reduced overscan for better performance
   const rowVirtualizer = useVirtualizer({
     count: displayableMessages.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 150,
-    overscan: 5,
+    overscan: 2, // Reduced from 5 to 2 for better performance
   });
 
   useEffect(() => {
@@ -43,6 +72,8 @@ export const MessagesContainer: React.FC<MessagesContainerProps> = ({
       behavior: "smooth"
     });
   }, [displayableMessages.length, rowVirtualizer]);
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
 
   return (
     <div
@@ -63,23 +94,16 @@ export const MessagesContainer: React.FC<MessagesContainerProps> = ({
         style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
       >
         <AnimatePresence>
-          {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+          {virtualItems.map((virtualItem) => {
             const message = displayableMessages[virtualItem.index];
             return (
-              <motion.div
+              <VirtualizedItem
                 key={virtualItem.key}
-                data-index={virtualItem.index}
-                ref={(el) => el && rowVirtualizer.measureElement(el)}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className="absolute inset-x-4 pb-4"
-                style={{ top: virtualItem.start }}
-              >
-                <ErrorBoundary>
-                  <StreamMessage message={message} streamMessages={messages} />
-                </ErrorBoundary>
-              </motion.div>
+                message={message}
+                allMessages={messages}
+                virtualItem={virtualItem}
+                measureElement={rowVirtualizer.measureElement}
+              />
             );
           })}
         </AnimatePresence>
@@ -87,3 +111,6 @@ export const MessagesContainer: React.FC<MessagesContainerProps> = ({
     </div>
   );
 };
+
+// Export memoized component
+export const MessagesContainer = React.memo(MessagesContainerComponent);

@@ -4,7 +4,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use tokio::fs as async_fs;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -21,6 +22,111 @@ use tower_http::{
 };
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
+
+/// Maximum allowed file size (10MB)
+const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
+/// Allowed file extensions for text files
+const ALLOWED_EXTENSIONS: &[&str] = &[
+    "txt", "md", "markdown", "json", "jsonl", "yaml", "yml",
+    "rs", "js", "ts", "tsx", "jsx", "py", "java", "cpp", "c", "h",
+    "html", "css", "scss", "less", "xml", "csv", "log", "toml",
+];
+
+/// Security validation result for file operations
+#[derive(Debug)]
+struct FileSecurityValidation {
+    is_valid: bool,
+    error_message: Option<String>,
+}
+
+/// Validates file path for security
+fn validate_file_path(file_path: &str) -> FileSecurityValidation {
+    let path = Path::new(file_path);
+
+    // Check for path traversal attacks
+    if path.components().any(|component| component == std::path::Component::ParentDir) {
+        return FileSecurityValidation {
+            is_valid: false,
+            error_message: Some("Path traversal attack detected".to_string()),
+        };
+    }
+
+    // Check for absolute paths that escape allowed directories
+    if path.is_absolute() {
+        // Only allow absolute paths within home directory or app directory
+        let path_str = path.to_string_lossy();
+        if !path_str.starts_with("/home") &&
+           !path_str.starts_with("/tmp") &&
+           !path_str.starts_with("/var") &&
+           !path_str.contains("/.claude/") {
+            return FileSecurityValidation {
+                is_valid: false,
+                error_message: Some("Access to this directory is not allowed".to_string()),
+            };
+        }
+    }
+
+    FileSecurityValidation {
+        is_valid: true,
+        error_message: None,
+    }
+}
+
+/// Validates file extension
+fn validate_file_extension(file_path: &str) -> FileSecurityValidation {
+    if let Some(extension) = Path::new(file_path).extension().and_then(|e| e.to_str()) {
+        if !ALLOWED_EXTENSIONS.contains(&extension) {
+            return FileSecurityValidation {
+                is_valid: false,
+                error_message: Some(format!("File type not allowed: {}", extension)),
+            };
+        }
+    }
+
+    FileSecurityValidation {
+        is_valid: true,
+        error_message: None,
+    }
+}
+
+/// Validates file size
+fn validate_file_size(file_path: &str) -> FileSecurityValidation {
+    if let Ok(metadata) = fs::metadata(file_path) {
+        if metadata.len() > MAX_FILE_SIZE {
+            return FileSecurityValidation {
+                is_valid: false,
+                error_message: Some(format!(
+                    "File size exceeds maximum allowed size ({} bytes)",
+                    MAX_FILE_SIZE
+                )),
+            };
+        }
+    }
+
+    FileSecurityValidation {
+        is_valid: true,
+        error_message: None,
+    }
+}
+
+/// Comprehensive file security validation
+fn validate_file_operation(file_path: &str) -> FileSecurityValidation {
+    // Validate path first
+    let validation = validate_file_path(file_path);
+    if !validation.is_valid {
+        return validation;
+    }
+
+    // Validate extension
+    let validation = validate_file_extension(file_path);
+    if !validation.is_valid {
+        return validation;
+    }
+
+    // Validate size
+    validate_file_size(file_path)
+}
 
 /// Global state to track current Claude process
 pub struct ClaudeProcessState {
@@ -409,7 +515,7 @@ fn create_command_with_env(program: &str) -> Command {
 
     // Create a new tokio Command from the program path
     let mut tokio_cmd = Command::new(program);
-    
+
     // On Windows, prevent opening a new console window
     #[cfg(target_os = "windows")]
     {
@@ -466,6 +572,45 @@ fn create_command_with_env(program: &str) -> Command {
     }
 
     tokio_cmd
+}
+
+/// Helper function to extract file extension and metadata efficiently
+fn get_file_info(path: &PathBuf, metadata: &std::fs::Metadata) -> (Option<String>, Option<u64>) {
+    let extension = if metadata.is_file() {
+        path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_string())
+    } else {
+        None
+    };
+
+    let modified_time = metadata
+        .modified()
+        .ok()
+        .and_then(|time| {
+            time.duration_since(UNIX_EPOCH)
+                .ok()
+                .map(|duration| duration.as_secs())
+        });
+
+    (extension, modified_time)
+}
+
+/// Helper function to normalize path for cross-platform compatibility
+fn normalize_path(path: &Path) -> std::borrow::Cow<'_, str> {
+    let path_str = path.to_string_lossy();
+
+    // Convert backslashes to forward slashes for URL compatibility
+    #[cfg(windows)]
+    {
+        path_str.replace('\\', "/").into()
+    }
+
+    #[cfg(not(windows))]
+    {
+        path_str
+    }
 }
 
 /// Creates a system binary command with the given arguments
@@ -699,39 +844,43 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
         }
     };
 
-    let mut sessions = Vec::new();
-
-    // Read all JSONL files in the project directory
-    let entries = fs::read_dir(&project_dir)
+    // Read all JSONL files in the project directory with async I/O
+    let entries = async_fs::read_dir(&project_dir)
+        .await
         .map_err(|e| format!("Failed to read project directory: {}", e))?;
 
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
-        let path = entry.path();
+    let mut sessions = Vec::new();
+    let mut entries = entries;
 
-        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-            if let Some(session_id) = path.file_stem().and_then(|s| s.to_str()) {
+    while let Some(entry) = entries.next_entry().await
+        .map_err(|e| format!("Failed to read directory entry: {}", e))? {
+        let path = entry.path();
+        let path_owned = path.to_path_buf();
+
+        if path_owned.is_file() && path_owned.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+            if let Some(session_id) = path_owned.file_stem().and_then(|s| s.to_str()) {
                 // Skip agent session files (agent-*.jsonl) - only show user conversation sessions
-                if session_id.starts_with("agent-") {
+                if session_id.starts_with("agent-") || !is_valid_uuid(session_id) {
                     continue;
                 }
-                
-                // Only include valid UUID format session IDs (user conversations)
-                // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-                if !is_valid_uuid(session_id) {
-                    // Skip non-UUID files (they might be agent sessions or other files)
-                    continue;
-                }
-                
-                // Skip empty JSONL files (no valid content)
-                if is_jsonl_file_empty(&path) {
+
+                // Skip empty JSONL files
+                if is_jsonl_file_empty(&path_owned) {
                     log::debug!("Skipping empty session file: {}", session_id);
                     continue;
                 }
-                
-                // Get file creation time and last modified time
-                let metadata = fs::metadata(&path)
-                    .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+
+                // Get file creation time and last modified time (synchronous, fast metadata operation)
+                let metadata = fs::metadata(&path_owned)
+                    .map_err(|e| format!("Failed to read file metadata: {}", e));
+
+                let metadata = match metadata {
+                    Ok(m) => m,
+                    Err(e) => {
+                        log::warn!("Failed to read metadata for {}: {}", session_id, e);
+                        continue;
+                    }
+                };
 
                 let created_at = metadata
                     .created()
@@ -741,7 +890,6 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
                     .unwrap_or_default()
                     .as_secs();
 
-                // Get last modified time for sorting
                 let modified_at = metadata
                     .modified()
                     .unwrap_or(SystemTime::UNIX_EPOCH)
@@ -749,18 +897,17 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
                     .unwrap_or_default()
                     .as_secs();
 
-                // Extract first user message and timestamp
-                let (first_message, message_timestamp) = extract_first_user_message(&path);
+                // Extract messages (synchronous, fast)
+                let (first_message, message_timestamp) = extract_first_user_message(&path_owned);
+                let last_message_timestamp = extract_last_message_timestamp(&path_owned);
 
-                // Extract last message timestamp for sorting by activity
-                let last_message_timestamp = extract_last_message_timestamp(&path);
-
-                // Try to load associated todo data
+                // Load todo data asynchronously
                 let todo_path = todos_dir.join(format!("{}.json", session_id));
                 let todo_data = if todo_path.exists() {
-                    fs::read_to_string(&todo_path)
-                        .ok()
-                        .and_then(|content| serde_json::from_str(&content).ok())
+                    match async_fs::read_to_string(&todo_path).await {
+                        Ok(content) => serde_json::from_str(&content).ok(),
+                        Err(_) => None,
+                    }
                 } else {
                     None
                 };
@@ -808,7 +955,8 @@ pub async fn get_claude_settings() -> Result<ClaudeSettings, String> {
         });
     }
 
-    let content = fs::read_to_string(&settings_path)
+    let content = async_fs::read_to_string(&settings_path)
+        .await
         .map_err(|e| format!("Failed to read settings file: {}", e))?;
 
     let data: serde_json::Value = serde_json::from_str(&content)
@@ -1089,12 +1237,19 @@ fn find_claude_md_recursive(
 pub async fn read_claude_md_file(file_path: String) -> Result<String, String> {
     log::info!("Reading CLAUDE.md file: {}", file_path);
 
+    // Validate file path for security
+    let validation = validate_file_operation(&file_path);
+    if !validation.is_valid {
+        return Err(validation.error_message.unwrap_or("Invalid file path".to_string()));
+    }
+
     let path = PathBuf::from(&file_path);
     if !path.exists() {
         return Err(format!("File does not exist: {}", file_path));
     }
 
-    fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))
+    async_fs::read_to_string(&path).await
+        .map_err(|e| format!("Failed to read file: {}", e))
 }
 
 /// Saves a specific CLAUDE.md file by its absolute path
@@ -1120,6 +1275,12 @@ pub async fn save_claude_md_file(file_path: String, content: String) -> Result<S
 pub async fn read_text_file(file_path: String) -> Result<String, String> {
     log::info!("Reading text file for preview: {}", file_path);
 
+    // Validate file path for security
+    let validation = validate_file_operation(&file_path);
+    if !validation.is_valid {
+        return Err(validation.error_message.unwrap_or("Invalid file path".to_string()));
+    }
+
     let path = PathBuf::from(&file_path);
     if !path.exists() {
         return Err(format!("File does not exist: {}", file_path));
@@ -1128,19 +1289,17 @@ pub async fn read_text_file(file_path: String) -> Result<String, String> {
     // Get file metadata to check size
     let metadata = fs::metadata(&path)
         .map_err(|e| format!("Failed to get file metadata: {}", e))?;
-    
-    // Limit file size to 10MB for preview
-    const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
-    
+
     if metadata.len() > MAX_FILE_SIZE {
-        return Err(format!("File too large to preview ({} bytes). Maximum size is {} bytes", 
+        return Err(format!("File too large to preview ({} bytes). Maximum size is {} bytes",
             metadata.len(), MAX_FILE_SIZE));
     }
 
-    // Read file content
-    let content = fs::read_to_string(&path)
+    // Read file content asynchronously
+    let content = async_fs::read_to_string(&path)
+        .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
-    
+
     Ok(content)
 }
 
@@ -1501,143 +1660,167 @@ async fn spawn_claude_process(
     log::info!("  - Model: {}", model);
     log::info!("  - Working directory: {}", project_path);
 
-    // Spawn tasks to read stdout and stderr
-    let app_handle = app.clone();
-    let session_id_holder_clone = session_id_holder.clone();
-    let run_id_holder_clone = run_id_holder.clone();
-    let registry = app.state::<crate::process::ProcessRegistryState>();
-    let registry_clone = registry.0.clone();
-    let project_path_clone = project_path.clone();
-    let prompt_clone = prompt.clone();
-    let model_clone = model.clone();
-    let stdout_task = tokio::spawn(async move {
-        log::info!("📖 Starting to read Claude stdout...");
-        let mut reader = stdout_reader;
-        let mut line_count = 0;
-        while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut reader).await {
-            line_count += 1;
-            log::debug!("Claude stdout[{}]: {}", line_count, line);
-            log::debug!("Claude stdout: {}", line);
+    // Extract registry reference once to avoid cloning
+    let registry = app.state::<crate::process::ProcessRegistryState>().0.clone();
 
-            // Parse the line to check for init message with session ID
-            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
-                if msg["type"] == "system" && msg["subtype"] == "init" {
-                    if let Some(claude_session_id) = msg["session_id"].as_str() {
-                        let mut session_id_guard = session_id_holder_clone.lock().unwrap();
-                        if session_id_guard.is_none() {
-                            *session_id_guard = Some(claude_session_id.to_string());
-                            log::info!("Extracted Claude session ID: {}", claude_session_id);
+    // Spawn stdout reading task with optimized variable capture
+    let stdout_task = {
+        let app_handle = app.clone();
+        let registry = registry.clone();
+        let session_id_holder_clone = session_id_holder.clone();
+        let run_id_holder_clone = run_id_holder.clone();
+        let project_path_clone = project_path.clone();
+        let prompt_clone = prompt.clone();
+        let model_clone = model.clone();
 
-                            // Now register with ProcessRegistry using Claude's session ID
-                            match registry_clone.register_claude_session(
-                                claude_session_id.to_string(),
-                                pid,
-                                project_path_clone.clone(),
-                                prompt_clone.clone(),
-                                model_clone.clone(),
-                            ) {
-                                Ok(run_id) => {
-                                    log::info!("Registered Claude session with run_id: {}", run_id);
-                                    let mut run_id_guard = run_id_holder_clone.lock().unwrap();
-                                    *run_id_guard = Some(run_id);
+        tokio::spawn(async move {
+            log::info!("📖 Starting to read Claude stdout...");
+            let mut reader = stdout_reader;
+            let mut line_count = 0;
+
+            while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut reader).await {
+                line_count += 1;
+                log::debug!("Claude stdout[{}]: {}", line_count, line);
+
+                // Parse the line to check for init message with session ID
+                if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
+                    if msg["type"] == "system" && msg["subtype"] == "init" {
+                        if let Some(claude_session_id) = msg["session_id"].as_str() {
+                            // Use scoped lock to minimize lock duration
+                            let should_register = {
+                                let mut session_id_guard = session_id_holder_clone.lock().unwrap();
+                                if session_id_guard.is_none() {
+                                    *session_id_guard = Some(claude_session_id.to_string());
+                                    true
+                                } else {
+                                    false
                                 }
-                                Err(e) => {
-                                    log::error!("Failed to register Claude session: {}", e);
+                            };
+
+                            if should_register {
+                                log::info!("Extracted Claude session ID: {}", claude_session_id);
+
+                                // Register with ProcessRegistry using Claude's session ID
+                                match registry.register_claude_session(
+                                    claude_session_id.to_string(),
+                                    pid,
+                                    project_path_clone.clone(),
+                                    prompt_clone.clone(),
+                                    model_clone.clone(),
+                                ) {
+                                    Ok(run_id) => {
+                                        log::info!("Registered Claude session with run_id: {}", run_id);
+                                        let mut run_id_guard = run_id_holder_clone.lock().unwrap();
+                                        *run_id_guard = Some(run_id);
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to register Claude session: {}", e);
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            // Store live output in registry if we have a run_id
-            if let Some(run_id) = *run_id_holder_clone.lock().unwrap() {
-                let _ = registry_clone.append_live_output(run_id, &line);
-            }
+                // Store live output in registry if we have a run_id
+                if let Some(run_id) = *run_id_holder_clone.lock().unwrap() {
+                    let _ = registry.append_live_output(run_id, &line);
+                }
 
-            // Emit the line to the frontend with session isolation if we have session ID
-            if let Some(ref session_id) = *session_id_holder_clone.lock().unwrap() {
-                log::debug!("Emitting claude-output:{} (line {})", session_id, line_count);
-                let _ = app_handle.emit(&format!("claude-output:{}", session_id), &line);
+                // Emit the line to the frontend with session isolation if we have session ID
+                if let Some(ref session_id) = *session_id_holder_clone.lock().unwrap() {
+                    log::debug!("Emitting claude-output:{} (line {})", session_id, line_count);
+                    let _ = app_handle.emit(&format!("claude-output:{}", session_id), &line);
+                } else {
+                    log::debug!("No session ID yet, only emitting generic event (line {})", line_count);
+                }
+                // Also emit to the generic event for backward compatibility
+                let _ = app_handle.emit("claude-output", &line);
+            }
+            log::info!("📖 Finished reading Claude stdout. Total lines: {}", line_count);
+        })
+    };
+
+    // Spawn stderr reading task with optimized variable capture
+    let stderr_task = {
+        let app_handle = app.clone();
+        let session_id_holder_clone = session_id_holder.clone();
+
+        tokio::spawn(async move {
+            log::info!("📖 Starting to read Claude stderr...");
+            let mut reader = stderr_reader;
+            let mut error_count = 0;
+            while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut reader).await {
+                error_count += 1;
+                log::error!("Claude stderr[{}]: {}", error_count, line);
+                // Emit error lines to the frontend with session isolation if we have session ID
+                if let Some(ref session_id) = *session_id_holder_clone.lock().unwrap() {
+                    let _ = app_handle.emit(&format!("claude-error:{}", session_id), &line);
+                }
+                // Also emit to the generic event for backward compatibility
+                let _ = app_handle.emit("claude-error", &line);
+            }
+            if error_count > 0 {
+                log::warn!("📖 Finished reading Claude stderr. Total error lines: {}", error_count);
             } else {
-                log::debug!("No session ID yet, only emitting generic event (line {})", line_count);
+                log::info!("📖 Finished reading Claude stderr. No errors.");
             }
-            // Also emit to the generic event for backward compatibility
-            let _ = app_handle.emit("claude-output", &line);
-        }
-        log::info!("📖 Finished reading Claude stdout. Total lines: {}", line_count);
-    });
+        })
+    };
 
-    let app_handle_stderr = app.clone();
-    let session_id_holder_clone2 = session_id_holder.clone();
-    let stderr_task = tokio::spawn(async move {
-        log::info!("📖 Starting to read Claude stderr...");
-        let mut reader = stderr_reader;
-        let mut error_count = 0;
-        while let Ok(Some(line)) = crate::claude_binary::read_decoded_line(&mut reader).await {
-            error_count += 1;
-            log::error!("Claude stderr[{}]: {}", error_count, line);
-            // Emit error lines to the frontend with session isolation if we have session ID
-            if let Some(ref session_id) = *session_id_holder_clone2.lock().unwrap() {
-                let _ = app_handle_stderr.emit(&format!("claude-error:{}", session_id), &line);
-            }
-            // Also emit to the generic event for backward compatibility
-            let _ = app_handle_stderr.emit("claude-error", &line);
-        }
-        if error_count > 0 {
-            log::warn!("📖 Finished reading Claude stderr. Total error lines: {}", error_count);
-        } else {
-            log::info!("📖 Finished reading Claude stderr. No errors.");
-        }
-    });
+    // Wait for the process to complete with optimized variable capture
+    let wait_task = {
+        let app_handle = app.clone();
+        let claude_state_wait = claude_state.current_process.clone();
+        let session_id_holder_clone = session_id_holder.clone();
+        let run_id_holder = run_id_holder.clone();
+        let registry = registry.clone();
 
-    // Wait for the process to complete
-    let app_handle_wait = app.clone();
-    let claude_state_wait = claude_state.current_process.clone();
-    let session_id_holder_clone3 = session_id_holder.clone();
-    let run_id_holder_clone2 = run_id_holder.clone();
-    let registry_clone2 = registry.0.clone();
-    tokio::spawn(async move {
-        let _ = stdout_task.await;
-        let _ = stderr_task.await;
+        tokio::spawn(async move {
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
 
-        // Get the child from the state to wait on it
-        let mut current_process = claude_state_wait.lock().await;
-        if let Some(mut child) = current_process.take() {
-            match child.wait().await {
-                Ok(status) => {
-                    log::info!("Claude process exited with status: {}", status);
-                    // Add a small delay to ensure all messages are processed
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    if let Some(ref session_id) = *session_id_holder_clone3.lock().unwrap() {
-                        let _ = app_handle_wait
-                            .emit(&format!("claude-complete:{}", session_id), status.success());
+            // Get the child from the state to wait on it
+            let mut current_process = claude_state_wait.lock().await;
+            if let Some(mut child) = current_process.take() {
+                match child.wait().await {
+                    Ok(status) => {
+                        log::info!("Claude process exited with status: {}", status);
+                        // Add a small delay to ensure all messages are processed
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        if let Some(ref session_id) = *session_id_holder_clone.lock().unwrap() {
+                            let _ = app_handle
+                                .emit(&format!("claude-complete:{}", session_id), status.success());
+                        }
+                        // Also emit to the generic event for backward compatibility
+                        let _ = app_handle.emit("claude-complete", status.success());
                     }
-                    // Also emit to the generic event for backward compatibility
-                    let _ = app_handle_wait.emit("claude-complete", status.success());
-                }
-                Err(e) => {
-                    log::error!("Failed to wait for Claude process: {}", e);
-                    // Add a small delay to ensure all messages are processed
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    if let Some(ref session_id) = *session_id_holder_clone3.lock().unwrap() {
-                        let _ =
-                            app_handle_wait.emit(&format!("claude-complete:{}", session_id), false);
+                    Err(e) => {
+                        log::error!("Failed to wait for Claude process: {}", e);
+                        // Add a small delay to ensure all messages are processed
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        if let Some(ref session_id) = *session_id_holder_clone.lock().unwrap() {
+                            let _ =
+                                app_handle.emit(&format!("claude-complete:{}", session_id), false);
+                        }
+                        // Also emit to the generic event for backward compatibility
+                        let _ = app_handle.emit("claude-complete", false);
                     }
-                    // Also emit to the generic event for backward compatibility
-                    let _ = app_handle_wait.emit("claude-complete", false);
                 }
             }
-        }
 
-        // Unregister from ProcessRegistry if we have a run_id
-        if let Some(run_id) = *run_id_holder_clone2.lock().unwrap() {
-            let _ = registry_clone2.unregister_process(run_id);
-        }
+            // Unregister from ProcessRegistry if we have a run_id
+            if let Some(run_id) = *run_id_holder.lock().unwrap() {
+                let _ = registry.unregister_process(run_id);
+            }
 
-        // Clear the process from state
-        *current_process = None;
-    });
+            // Clear the process from state
+            *current_process = None;
+        })
+    };
+
+    // Don't await the wait task to avoid blocking
+    let _ = wait_task;
 
     Ok(())
 }
@@ -1691,24 +1874,7 @@ pub async fn list_directory_contents(directory_path: String) -> Result<Vec<FileE
             .unwrap_or("")
             .to_string();
 
-        let extension = if metadata.is_file() {
-            entry_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e.to_string())
-        } else {
-            None
-        };
-
-        // Get modified time
-        let modified_time = metadata
-            .modified()
-            .ok()
-            .and_then(|time| {
-                time.duration_since(UNIX_EPOCH)
-                    .ok()
-                    .map(|duration| duration.as_secs())
-            });
+        let (extension, modified_time) = get_file_info(&entry_path, &metadata);
 
         entries.push(FileEntry {
             name,
@@ -1753,6 +1919,9 @@ pub async fn list_project_files(project_path: String) -> Result<Vec<FileEntry>, 
         .canonicalize()
         .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
 
+    // Maximum number of entries to prevent memory issues on large projects
+    const MAX_ENTRIES: usize = 5000;
+
     // Recursively walk the directory tree
     fn walk_directory(
         dir_path: &PathBuf,
@@ -1763,6 +1932,12 @@ pub async fn list_project_files(project_path: String) -> Result<Vec<FileEntry>, 
             .map_err(|e| format!("Failed to read directory: {}", e))?;
 
         for entry in dir_entries {
+            // Check if we've reached the limit
+            if entries.len() >= MAX_ENTRIES {
+                log::warn!("Reached maximum entry limit of {}, stopping file listing", MAX_ENTRIES);
+                break;
+            }
+
             let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
             let entry_path = entry.path();
 
@@ -1801,7 +1976,7 @@ pub async fn list_project_files(project_path: String) -> Result<Vec<FileEntry>, 
             let normalized_path = relative_path
                 .to_string_lossy()
                 .replace('\\', "/");
-            
+
             // Get modified time
             let modified_time = metadata
                 .modified()
@@ -1811,7 +1986,7 @@ pub async fn list_project_files(project_path: String) -> Result<Vec<FileEntry>, 
                         .ok()
                         .map(|duration| duration.as_secs())
                 });
-            
+
             entries.push(FileEntry {
                 name,
                 path: normalized_path,
@@ -1838,6 +2013,10 @@ pub async fn list_project_files(project_path: String) -> Result<Vec<FileEntry>, 
         (false, true) => std::cmp::Ordering::Greater,
         _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
     });
+
+    if entries.len() >= MAX_ENTRIES {
+        log::warn!("File listing truncated at {} entries to prevent memory issues", MAX_ENTRIES);
+    }
 
     Ok(entries)
 }
@@ -1906,6 +2085,11 @@ fn search_files_recursive(
         .map_err(|e| format!("Failed to read directory {:?}: {}", current_path, e))?;
 
     for entry in entries {
+        // Early exit if we've reached the limit
+        if results.len() >= 50 {
+            break;
+        }
+
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
         let entry_path = entry.path();
 
@@ -1939,7 +2123,7 @@ fn search_files_recursive(
                             .ok()
                             .map(|duration| duration.as_secs())
                     });
-                
+
                 results.push(FileEntry {
                     name: name.to_string(),
                     path: entry_path.to_string_lossy().to_string(),
@@ -2527,7 +2711,8 @@ pub async fn get_hooks_config(
         return Ok(serde_json::json!({}));
     }
 
-    let content = fs::read_to_string(&settings_path)
+    let content = async_fs::read_to_string(&settings_path)
+        .await
         .map_err(|e| format!("Failed to read settings: {}", e))?;
 
     let settings: serde_json::Value =
@@ -2575,7 +2760,8 @@ pub async fn update_hooks_config(
 
     // Read existing settings or create new
     let mut settings = if settings_path.exists() {
-        let content = fs::read_to_string(&settings_path)
+        let content = async_fs::read_to_string(&settings_path)
+            .await
             .map_err(|e| format!("Failed to read settings: {}", e))?;
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse settings: {}", e))?
     } else {

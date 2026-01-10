@@ -24,71 +24,79 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
   const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  
+
+  // Constants for memory management
+  const MAX_MESSAGES = 1000;
+  const MAX_RAW_OUTPUT = 1000;
+
   const eventListenerRef = useRef<(() => void) | null>(null);
   const accumulatedContentRef = useRef<{ [key: string]: string }>({});
 
   const handleMessage = useCallback((message: ClaudeStreamMessage) => {
+    const messageType = (message as any).type;
 
-    
-    if ((message as any).type === "start") {
-
+    if (messageType === "start") {
       // Clear accumulated content for new stream
       accumulatedContentRef.current = {};
       setIsStreaming(true);
       options.onStreamingChange?.(true, currentSessionId);
-    } else if ((message as any).type === "partial") {
-
+    } else if (messageType === "partial") {
       if (message.tool_calls && message.tool_calls.length > 0) {
         message.tool_calls.forEach((toolCall: any) => {
           if (toolCall.content && toolCall.partial_tool_call_index !== undefined) {
             const key = `tool-${toolCall.partial_tool_call_index}`;
-            if (!accumulatedContentRef.current[key]) {
-              accumulatedContentRef.current[key] = "";
+            // Accumulate content with size limit
+            const currentContent = accumulatedContentRef.current[key] || "";
+            if (currentContent.length < 10000) { // Limit accumulation per tool call
+              accumulatedContentRef.current[key] = currentContent + toolCall.content;
+              toolCall.accumulated_content = accumulatedContentRef.current[key];
             }
-            accumulatedContentRef.current[key] += toolCall.content;
-            toolCall.accumulated_content = accumulatedContentRef.current[key];
           }
         });
       }
-    } else if ((message as any).type === "response" && message.message?.usage) {
-
-      const totalTokens = (message.message.usage.input_tokens || 0) + 
+    } else if (messageType === "response" && message.message?.usage) {
+      const totalTokens = (message.message.usage.input_tokens || 0) +
                          (message.message.usage.output_tokens || 0);
 
       options.onTokenUpdate?.(totalTokens);
-    } else if ((message as any).type === "error" || (message as any).type === "response") {
-
+    } else if (messageType === "error" || messageType === "response") {
       setIsStreaming(false);
       options.onStreamingChange?.(false, currentSessionId);
-    } else if ((message as any).type === "output") {
-
-    } else {
-
     }
 
-
+    // Use functional updates to avoid stale state
     setMessages(prev => {
       const newMessages = [...prev, message];
-
+      // Maintain memory limit by keeping only the most recent messages
+      if (newMessages.length > MAX_MESSAGES) {
+        return newMessages.slice(-MAX_MESSAGES);
+      }
       return newMessages;
     });
-    setRawJsonlOutput(prev => [...prev, JSON.stringify(message)]);
+
+    setRawJsonlOutput(prev => {
+      const newRawOutput = [...prev, JSON.stringify(message)];
+      // Maintain memory limit for raw output
+      if (newRawOutput.length > MAX_RAW_OUTPUT) {
+        return newRawOutput.slice(-MAX_RAW_OUTPUT);
+      }
+      return newRawOutput;
+    });
 
     // Extract session info
-    if ((message as any).type === "session_info" && (message as any).session_id && (message as any).project_id) {
-
+    if (messageType === "session_info" && (message as any).session_id && (message as any).project_id) {
       options.onSessionInfo?.({
         sessionId: (message as any).session_id,
         projectId: (message as any).project_id
       });
       setCurrentSessionId((message as any).session_id);
     }
-  }, [currentSessionId, options]);
+  }, [currentSessionId, options, MAX_MESSAGES, MAX_RAW_OUTPUT]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
     setRawJsonlOutput([]);
+    // Clean up accumulated content to prevent memory leaks
     accumulatedContentRef.current = {};
   }, []);
 
@@ -99,7 +107,7 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
       const outputs = [{ jsonl: output }];
       const loadedMessages: ClaudeStreamMessage[] = [];
       const loadedRawJsonl: string[] = [];
-      
+
       outputs.forEach(output => {
         if (output.jsonl) {
           const lines = output.jsonl.split('\n').filter(line => line.trim());
@@ -114,70 +122,57 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
           });
         }
       });
-      
-      setMessages(loadedMessages);
-      setRawJsonlOutput(loadedRawJsonl);
+
+      // Apply memory limits when loading messages
+      setMessages(loadedMessages.slice(-MAX_MESSAGES));
+      setRawJsonlOutput(loadedRawJsonl.slice(-MAX_RAW_OUTPUT));
     } catch (error) {
       console.error("Failed to load session outputs:", error);
       throw error;
     }
-  }, []);
+  }, [MAX_MESSAGES, MAX_RAW_OUTPUT]);
 
   // Set up event listener
   useEffect(() => {
     const setupListener = async () => {
-
+      // Clean up previous listener
       if (eventListenerRef.current) {
-
         eventListenerRef.current();
       }
-      
+
       const envInfo = getEnvironmentInfo();
 
-      
       if (envInfo.isTauri && tauriListen) {
         // Tauri mode - use Tauri's event system
-
         eventListenerRef.current = await tauriListen("claude-stream", (event: any) => {
-
           try {
             const message = JSON.parse(event.payload) as ClaudeStreamMessage;
-
             handleMessage(message);
           } catch (error) {
             console.error("[TRACE] Failed to parse Claude stream message:", error);
           }
         });
-
       } else {
         // Web mode - use DOM events (these are dispatched by our WebSocket handler)
-
         const webEventHandler = (event: any) => {
-
-
           try {
             const message = event.detail as ClaudeStreamMessage;
-
             handleMessage(message);
           } catch (error) {
             console.error("[TRACE] Failed to parse Claude stream message:", error);
           }
         };
-        
+
         window.addEventListener('claude-output', webEventHandler);
 
-
-        
         // Test if event listener is working
         setTimeout(() => {
-
           window.dispatchEvent(new CustomEvent('claude-output', {
             detail: { type: 'test', message: 'test event' }
           }));
         }, 1000);
-        
-        eventListenerRef.current = () => {
 
+        eventListenerRef.current = () => {
           window.removeEventListener('claude-output', webEventHandler);
         };
       }
@@ -185,10 +180,11 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
 
     setupListener();
 
+    // Cleanup function
     return () => {
-
       if (eventListenerRef.current) {
         eventListenerRef.current();
+        eventListenerRef.current = null;
       }
     };
   }, [handleMessage]);
