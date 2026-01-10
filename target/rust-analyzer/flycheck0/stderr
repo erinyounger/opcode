@@ -1,0 +1,61 @@
+    Blocking waiting for file lock on build directory
+  68.920630300s  INFO prepare_target{force=false package_id=opcode v0.2.91 (D:\Code\github\opcode\src-tauri) target="opcode_lib"}: cargo::core::compiler::fingerprint: fingerprint error for opcode v0.2.91 (D:\Code\github\opcode\src-tauri)/Check { test: true }/TargetInner { ..: lib_target("opcode_lib", ["lib", "cdylib", "staticlib"], "D:\\Code\\github\\opcode\\src-tauri\\src\\lib.rs", Edition2021) }
+  68.920686200s  INFO prepare_target{force=false package_id=opcode v0.2.91 (D:\Code\github\opcode\src-tauri) target="opcode_lib"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\Code\github\opcode\src-tauri\target\debug\.fingerprint\opcode-361d05fae55a6010\test-lib-opcode_lib`
+
+Caused by:
+    系统找不到指定的文件。 (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+  68.972752200s  INFO prepare_target{force=false package_id=opcode v0.2.91 (D:\Code\github\opcode\src-tauri) target="opcode"}: cargo::core::compiler::fingerprint: fingerprint error for opcode v0.2.91 (D:\Code\github\opcode\src-tauri)/Check { test: true }/TargetInner { name: "opcode", doc: true, ..: with_path("D:\\Code\\github\\opcode\\src-tauri\\src\\main.rs", Edition2021) }
+  68.972830100s  INFO prepare_target{force=false package_id=opcode v0.2.91 (D:\Code\github\opcode\src-tauri) target="opcode"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\Code\github\opcode\src-tauri\target\debug\.fingerprint\opcode-8b97260776918668\test-bin-opcode`
+
+Caused by:
+    系统找不到指定的文件。 (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+    Checking opcode v0.2.91 (D:\Code\github\opcode\src-tauri)
+error: could not compile `opcode` (lib test) due to 3 previous errors; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `opcode` (bin "opcode" test) due to 3 previous errors; 1 warning emitted

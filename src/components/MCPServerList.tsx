@@ -107,7 +107,8 @@ function inferToolsFromServerName(serverName: string): string[] {
     return ['search', 'index', 'query', 'upsert'];
   }
 
-  return ['custom_tool_1', 'custom_tool_2', 'custom_tool_3'];
+  // 无法识别时返回空数组
+  return [];
 }
 
 /**
