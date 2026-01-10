@@ -10,20 +10,148 @@ use std::path::PathBuf;
 use std::process::Command;
 use tauri::AppHandle;
 
-/// Helper function to create a std::process::Command with proper environment variables
-/// This ensures commands like Claude can find Node.js and other dependencies
+// ============================================================================
+// 输入验证模块
+// ============================================================================
+
+/// 危险字符集合
+const DANGEROUS_SHELL_CHARS: &[char] = &[';', '&', '|', '$', '`', '(', ')', '<', '>', '\n', '\r', '*', '?', '[', ']', '{', '}', '~', '!', '#', '%'];
+const DANGEROUS_ARG_CHARS: &[char] = &[';', '&', '|', '$', '`', '(', ')', '<', '>', '\n', '\r'];
+const DANGEROUS_URL_CHARS: &[char] = &['\n', '\r', '\0', ' ', '<', '>', '"'];
+const DANGEROUS_HEADER_CHARS: &[char] = &['\n', '\r', '\0'];
+
+/// 允许的命令路径前缀
+const ALLOWED_PATH_PREFIXES: &[&str] = &[
+    "/usr/", "/bin/", "/sbin/", "/Applications/",
+    "C:\\Program Files\\", "C:\\Windows\\System32\\"
+];
+
+/// 验证结果类型
+type ValidationResult = std::result::Result<String, String>;
+
+/// 验证字符串不包含危险字符
+fn contains_dangerous_chars(s: &str, dangerous: &[char]) -> bool {
+    s.chars().any(|c| dangerous.contains(&c))
+}
+
+/// 验证命令字符串
+fn validate_command(cmd: &str) -> ValidationResult {
+    let cmd = cmd.trim();
+    if cmd.is_empty() {
+        return Err("Command cannot be empty".to_string());
+    }
+
+    if contains_dangerous_chars(cmd, DANGEROUS_SHELL_CHARS) {
+        return Err("Command contains invalid characters".to_string());
+    }
+
+    // 拒绝路径遍历攻击
+    if cmd.contains("..") || cmd.starts_with("~/") {
+        return Err("Invalid command path".to_string());
+    }
+
+    // 验证绝对路径
+    if cmd.starts_with('/') && !ALLOWED_PATH_PREFIXES.iter().any(|prefix| cmd.starts_with(prefix)) {
+        return Err("Command path not in allowed directories".to_string());
+    }
+
+    Ok(cmd.to_string())
+}
+
+/// 验证 URL
+fn validate_url(url: &str) -> ValidationResult {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("Only http/https URLs are allowed".to_string());
+    }
+
+    if contains_dangerous_chars(url, DANGEROUS_URL_CHARS) {
+        return Err("URL contains invalid characters".to_string());
+    }
+
+    Ok(url.to_string())
+}
+
+/// 验证环境变量名
+fn validate_env_var_name(name: &str) -> ValidationResult {
+    if name.is_empty() {
+        return Err("Environment variable name cannot be empty".to_string());
+    }
+
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err("Invalid environment variable name".to_string());
+    }
+
+    if name.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        return Err("Environment variable name cannot start with a number".to_string());
+    }
+
+    Ok(name.to_string())
+}
+
+/// 验证 HTTP 头部名称
+fn validate_header_name(name: &str) -> ValidationResult {
+    if name.is_empty() {
+        return Err("Header name cannot be empty".to_string());
+    }
+
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("Invalid header name".to_string());
+    }
+
+    Ok(name.to_string())
+}
+
+/// 验证头部值
+fn validate_header_value(value: &str) -> ValidationResult {
+    if contains_dangerous_chars(value, DANGEROUS_HEADER_CHARS) {
+        return Err("Header value contains invalid characters".to_string());
+    }
+    Ok(value.to_string())
+}
+
+/// 验证命令参数
+fn validate_arg(arg: &str) -> ValidationResult {
+    if arg.is_empty() {
+        return Err("Argument cannot be empty".to_string());
+    }
+
+    if contains_dangerous_chars(arg, DANGEROUS_ARG_CHARS) {
+        return Err("Argument contains invalid characters".to_string());
+    }
+
+    Ok(arg.to_string())
+}
+
+/// 验证服务器名称（防止路径注入）
+fn validate_server_name(name: &str) -> ValidationResult {
+    if name.is_empty() {
+        return Err("Server name cannot be empty".to_string());
+    }
+
+    // 只允许字母、数字、-、_
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        return Err("Server name contains invalid characters".to_string());
+    }
+
+    // 限制长度
+    if name.len() > 128 {
+        return Err("Server name too long".to_string());
+    }
+
+    Ok(name.to_string())
+}
+
+// ============================================================================
+// 辅助函数
+// ============================================================================
+
+/// 创建带环境变量的命令
 fn create_command_with_env(program: &str) -> Command {
     crate::claude_binary::create_command_with_env(program)
 }
 
-/// Cleans up command string by removing status indicators from claude mcp list output
-/// Examples of patterns to remove:
-/// - "- ✓ Connected"
-/// - "- ✗ Failed to connect"
-/// - "- ✓ connected"
-/// - "- ✗ failed"
+/// 清理命令字符串中的状态指示符
 fn clean_command_string(command: &str) -> String {
-    // Pattern: " - ✓ ..." or " - ✗ ..." at the end
     let patterns = [
         " - ✓ Connected",
         " - ✗ Failed to connect",
@@ -41,8 +169,7 @@ fn clean_command_string(command: &str) -> String {
         }
     }
 
-    // Also handle case-insensitive and variations
-    // Look for pattern: " - " followed by checkmark or X symbol
+    // 处理变体
     if let Some(pos) = result.find(" - ✓") {
         result = result[..pos].trim().to_string();
     } else if let Some(pos) = result.find(" - ✗") {
@@ -52,10 +179,30 @@ fn clean_command_string(command: &str) -> String {
     result
 }
 
-/// Finds the full path to the claude binary
-/// This is necessary because macOS apps have a limited PATH environment
+/// 查找 claude 二进制文件路径
 fn find_claude_binary(app_handle: &AppHandle) -> Result<String> {
     crate::claude_binary::find_claude_binary(app_handle).map_err(|e| anyhow::anyhow!(e))
+}
+
+/// 执行 claude mcp 命令
+fn execute_claude_mcp_command(app_handle: &AppHandle, args: Vec<String>) -> Result<String> {
+    info!("Executing claude mcp command with args: {:?}", args);
+
+    let claude_path = find_claude_binary(app_handle)?;
+    let mut cmd = create_command_with_env(&claude_path);
+    cmd.arg("mcp");
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    let output = cmd.output().context("Failed to execute claude command")?;
+
+    if output.status.success() {
+        Ok(crate::claude_binary::decode_command_output(&output.stdout))
+    } else {
+        let stderr = crate::claude_binary::decode_command_output(&output.stderr);
+        Err(anyhow::anyhow!("Command failed: {}", stderr))
+    }
 }
 
 /// Represents an MCP server configuration
@@ -152,26 +299,9 @@ pub struct ImportServerResult {
     pub error: Option<String>,
 }
 
-/// Executes a claude mcp command
-fn execute_claude_mcp_command(app_handle: &AppHandle, args: Vec<String>) -> Result<String> {
-    info!("Executing claude mcp command with args: {:?}", args);
-
-    let claude_path = find_claude_binary(app_handle)?;
-    let mut cmd = create_command_with_env(&claude_path);
-    cmd.arg("mcp");
-    for arg in args {
-        cmd.arg(arg);
-    }
-
-    let output = cmd.output().context("Failed to execute claude command")?;
-
-    if output.status.success() {
-        Ok(crate::claude_binary::decode_command_output(&output.stdout))
-    } else {
-        let stderr = crate::claude_binary::decode_command_output(&output.stderr);
-        Err(anyhow::anyhow!("Command failed: {}", stderr))
-    }
-}
+// ============================================================================
+// Tauri Commands
+// ============================================================================
 
 /// Adds a new MCP server
 #[tauri::command]
@@ -188,7 +318,27 @@ pub async fn mcp_add(
 ) -> Result<AddServerResult, String> {
     info!("Adding MCP server: {} with transport: {}", name, transport);
 
-    // Prepare owned strings for environment variables
+    // 验证服务器名称
+    if let Err(e) = validate_server_name(&name) {
+        return Ok(AddServerResult {
+            success: false,
+            message: format!("Invalid server name: {}", e),
+            server_name: None,
+        });
+    }
+
+    // 验证环境变量名
+    for key in env.keys() {
+        if let Err(e) = validate_env_var_name(key) {
+            return Ok(AddServerResult {
+                success: false,
+                message: format!("Invalid environment variable name '{}': {}", key, e),
+                server_name: None,
+            });
+        }
+    }
+
+    // 准备环境变量参数
     let env_args: Vec<String> = env
         .iter()
         .map(|(key, value)| format!("{}={}", key, value))
@@ -212,9 +362,26 @@ pub async fn mcp_add(
         cmd_args.push(env_args[i].clone());
     }
 
-    // Add headers for HTTP/SSE transports
+    // 验证并添加头部
     if !headers.is_empty() && (transport == "http" || transport == "sse") {
         for (key, value) in &headers {
+            // 验证头部名称和值
+            if let Err(e) = validate_header_name(key) {
+                return Ok(AddServerResult {
+                    success: false,
+                    message: format!("Invalid header name '{}': {}", key, e),
+                    server_name: None,
+                });
+            }
+
+            if let Err(e) = validate_header_value(value) {
+                return Ok(AddServerResult {
+                    success: false,
+                    message: format!("Invalid header value for '{}': {}", key, e),
+                    server_name: None,
+                });
+            }
+
             cmd_args.push("--header".to_string());
             cmd_args.push(format!("{}: {}", key, value));
         }
@@ -226,14 +393,37 @@ pub async fn mcp_add(
     // Add command/URL based on transport
     if transport == "stdio" {
         if let Some(cmd) = &command {
+            // 验证命令
+            let validated_cmd = match validate_command(cmd) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Ok(AddServerResult {
+                        success: false,
+                        message: format!("Invalid command: {}", e),
+                        server_name: None,
+                    });
+                }
+            };
+
             // Add "--" separator before command to prevent argument parsing issues
-            if !args.is_empty() || cmd.contains('-') {
+            if !args.is_empty() || validated_cmd.contains('-') {
                 cmd_args.push("--".to_string());
             }
-            cmd_args.push(cmd.clone());
-            // Add arguments
+            cmd_args.push(validated_cmd);
+
+            // 验证并添加参数
             for arg in &args {
-                cmd_args.push(arg.clone());
+                let validated_arg = match validate_arg(arg) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return Ok(AddServerResult {
+                            success: false,
+                            message: format!("Invalid argument '{}': {}", arg, e),
+                            server_name: None,
+                        });
+                    }
+                };
+                cmd_args.push(validated_arg);
             }
         } else {
             return Ok(AddServerResult {
@@ -244,7 +434,18 @@ pub async fn mcp_add(
         }
     } else if transport == "sse" {
         if let Some(url_str) = &url {
-            cmd_args.push(url_str.clone());
+            // 验证 URL
+            let validated_url = match validate_url(url_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Ok(AddServerResult {
+                        success: false,
+                        message: format!("Invalid URL: {}", e),
+                        server_name: None,
+                    });
+                }
+            };
+            cmd_args.push(validated_url);
         } else {
             return Ok(AddServerResult {
                 success: false,
@@ -407,6 +608,9 @@ pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
 #[tauri::command]
 pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> {
     info!("Getting MCP server details for: {}", name);
+
+    // 验证服务器名称
+    validate_server_name(&name)?;
 
     match execute_claude_mcp_command(&app, vec!["get".to_string(), name.clone()]) {
         Ok(output) => {
