@@ -27,7 +27,10 @@ const manualChunks: Record<string, string[]> = {
 };
 
 export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [react({
+    // 优化JSX编译
+    jsxRuntime: 'automatic',
+  }), tailwindcss()],
 
   resolve: {
     alias: {
@@ -48,9 +51,50 @@ export default defineConfig(async () => ({
   },
 
   build: {
-    chunkSizeWarningLimit: 2000,
-    rollupOptions: {
-      output: { manualChunks },
+    target: ['es2015', 'chrome80', 'firefox78', 'safari14'],
+    minify: 'terser',
+    sourcemap: false,
+    reportCompressedSize: true,
+    chunkSizeWarningLimit: 1500,
+    cssCodeSplit: true,
+    assetsInlineLimit: 4096,
+
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+        pure_funcs: ['console.log', 'console.info'],
+        pure_getters: true,
+        unsafe: true,
+        unsafe_comps: true,
+      },
+      mangle: {
+        safari10: true,
+      },
+      format: {
+        comments: false,
+      },
     },
+
+    rollupOptions: {
+      output: {
+        manualChunks,
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
+      },
+    },
+  },
+
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      '@tauri-apps/api',
+    ],
+    exclude: [
+      '@uiw/react-md-editor',
+      'react-syntax-highlighter',
+    ],
   },
 }));

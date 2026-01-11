@@ -72,7 +72,7 @@ import {
 
 // 工具和第三方库导入
 import { cn } from "@/lib/utils";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { SyntaxHighlighter } from "./CodeBlock";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { useTheme } from "@/hooks";
 import { createPortal } from "react-dom";
