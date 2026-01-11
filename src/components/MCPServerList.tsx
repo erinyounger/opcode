@@ -1,5 +1,22 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+// ============================================================================
+// 导入依赖
+// ============================================================================
+
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  type ReactNode
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
+
+// UI组件导入
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+
+// 图标导入
 import {
   Network,
   Globe,
@@ -17,26 +34,217 @@ import {
   ChevronUp,
   Copy,
   Pencil,
-  Info
+  Info,
+  AlertCircle,
+  Wifi,
+  WifiOff
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+
+// 工具和API导入
 import { api, type MCPServer, type MCPConfigPaths } from "@/lib/api";
 import { useTrackEvent } from "@/hooks";
 import { MCPEditServer } from "./MCPEditServer";
+import {
+  formatMcpToolName,
+  extractMcpToolMethods,
+  isMcpTool
+} from "@/lib/mcpTools";
 
-// 缓存常量
-const SERVER_TOOLS_CACHE_KEY = 'mcp_server_tools_v2';
-const CACHE_VERSION = '2';
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24小时
-const BATCH_SIZE = 5; // 批处理大小
-const AUTO_REFRESH_INTERVAL = 30000; // 30秒
+// ============================================================================
+// 类型定义
+// ============================================================================
 
+/** 缓存服务器工具接口 */
 interface CachedServerTools {
   version: string;
   timestamp: number;
   data: Record<string, string[]>;
 }
+
+/** 服务器状态接口 */
+interface ServerState {
+  isExpanded: boolean;
+  isTesting: boolean;
+  isRemoving: boolean;
+  isCopied: boolean;
+}
+
+/** 批处理结果接口 */
+interface BatchResult {
+  name: string;
+  tools: string[];
+  success: boolean;
+  error?: string;
+}
+
+/** 缓存管理器类 */
+class CacheManager {
+  private static readonly CACHE_KEY = 'mcp_server_tools_v3';
+  private static readonly CACHE_VERSION = '3';
+  private static readonly CACHE_TTL = 24 * 60 * 60 * 1000; // 24小时
+
+  /**
+   * 获取带TTL的缓存
+   */
+  static get(): Record<string, string[]> {
+    try {
+      const cached = localStorage.getItem(this.CACHE_KEY);
+      if (!cached) return {};
+
+      const parsed: CachedServerTools = JSON.parse(cached);
+
+      if (parsed.version !== this.CACHE_VERSION || Date.now() - parsed.timestamp > this.CACHE_TTL) {
+        this.clear();
+        return {};
+      }
+
+      return parsed.data || {};
+    } catch {
+      this.clear();
+      return {};
+    }
+  }
+
+  /**
+   * 设置缓存
+   */
+  static set(data: Record<string, string[]>): void {
+    try {
+      const cache: CachedServerTools = {
+        version: this.CACHE_VERSION,
+        timestamp: Date.now(),
+        data
+      };
+      localStorage.setItem(this.CACHE_KEY, JSON.stringify(cache));
+    } catch (error) {
+      if (error instanceof Error && error.name === 'QuotaExceededError') {
+        this.clear();
+      }
+    }
+  }
+
+  /**
+   * 清除缓存
+   */
+  static clear(): void {
+    try {
+      localStorage.removeItem(this.CACHE_KEY);
+    } catch {
+      // 静默失败
+    }
+  }
+}
+
+// ============================================================================
+// 常量定义
+// ============================================================================
+
+/** 批处理大小 */
+const BATCH_SIZE = 5;
+
+/** 自动刷新间隔 */
+const AUTO_REFRESH_INTERVAL = 30000; // 30秒
+
+/** 最大渲染服务器数量 */
+const MAX_RENDER_SERVERS = 100;
+
+/** 最大渲染工具数量 */
+const MAX_RENDER_TOOLS = 50;
+
+// ============================================================================
+// 工具函数
+// ============================================================================
+
+/**
+ * 获取传输类型图标
+ * @param transport - 传输类型
+ * @returns 图标元素
+ */
+const getTransportIcon = (transport: string): ReactNode => {
+  const iconMap: Record<string, ReactNode> = {
+    'stdio': <Terminal className="h-4 w-4 text-amber-500" />,
+    'http': <Globe className="h-4 w-4 text-emerald-500" />,
+    'sse': <Globe className="h-4 w-4 text-orange-500" />,
+    'websocket': <Network className="h-4 w-4 text-blue-500" />
+  };
+
+  return iconMap[transport.toLowerCase()] ?? <Network className="h-4 w-4 text-slate-500" />;
+};
+
+/**
+ * 获取作用域图标
+ * @param scope - 作用域
+ * @returns 图标元素
+ */
+const getScopeIcon = (scope: string): ReactNode => {
+  const iconMap: Record<string, ReactNode> = {
+    'local': <User className="h-3 w-3 text-slate-500" />,
+    'project': <FolderOpen className="h-3 w-3 text-orange-500" />,
+    'user': <FileText className="h-3 w-3 text-purple-500" />
+  };
+
+  return iconMap[scope.toLowerCase()] ?? null;
+};
+
+/**
+ * 获取作用域显示名称
+ * @param scope - 作用域
+ * @returns 显示名称
+ */
+const getScopeDisplayName = (scope: string): string => {
+  const nameMap: Record<string, string> = {
+    'local': 'Local (Project-specific)',
+    'project': 'Project (Shared via .mcp.json)',
+    'user': 'User (All projects)'
+  };
+
+  return nameMap[scope.toLowerCase()] ?? scope;
+};
+
+/**
+ * 验证服务器名称
+ * @param name - 服务器名称
+ * @returns 是否有效
+ */
+const isValidServerName = (name: string): boolean => {
+  return typeof name === 'string' &&
+         name.length > 0 &&
+         name.length <= 128 &&
+         /^[a-zA-Z0-9_-]+$/.test(name);
+};
+
+/**
+ * 安全的复制到剪贴板
+ * @param text - 要复制的文本
+ * @returns Promise<boolean> 是否成功
+ */
+const safeCopyToClipboard = async (text: string): Promise<boolean> => {
+  try {
+    if (typeof text !== 'string' || text.length === 0) {
+      return false;
+    }
+
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+
+    // 回退方案
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    textArea.style.top = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const result = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return result;
+  } catch {
+    return false;
+  }
+};
 
 interface MCPServerListProps {
   servers: MCPServer[];
@@ -46,69 +254,365 @@ interface MCPServerListProps {
 }
 
 /**
- * 获取带TTL的缓存
+ * 服务器项组件
  */
-function getCachedServerTools(): Record<string, string[]> {
-  try {
-    const cached = localStorage.getItem(SERVER_TOOLS_CACHE_KEY);
-    if (!cached) return {};
-
-    const parsed: CachedServerTools = JSON.parse(cached);
-
-    if (parsed.version !== CACHE_VERSION || Date.now() - parsed.timestamp > CACHE_TTL) {
-      localStorage.removeItem(SERVER_TOOLS_CACHE_KEY);
-      return {};
-    }
-
-    return parsed.data || {};
-  } catch {
-    localStorage.removeItem(SERVER_TOOLS_CACHE_KEY);
-    return {};
-  }
+interface ServerItemProps {
+  server: MCPServer;
+  serverTools: Record<string, string[]>;
+  serverStates: Record<string, ServerState>;
+  onToggleExpanded: (serverName: string) => void;
+  onTestConnection: (serverName: string) => void;
+  onRemoveServer: (serverName: string) => void;
+  onEditServer: (server: MCPServer) => void;
+  onCopyCommand: (command: string, serverName: string) => void;
+  getTransportIcon: (transport: string) => ReactNode;
+  getScopeIcon: (scope: string) => ReactNode;
+  getScopeDisplayName: (scope: string) => string;
+  trackEvent: any;
 }
 
-/**
- * 设置带TTL的缓存
- */
-function setCachedServerTools(data: Record<string, string[]>): void {
-  try {
-    const cache: CachedServerTools = {
-      version: CACHE_VERSION,
-      timestamp: Date.now(),
-      data
-    };
-    localStorage.setItem(SERVER_TOOLS_CACHE_KEY, JSON.stringify(cache));
-  } catch (error) {
-    if (error instanceof Error && error.name === 'QuotaExceededError') {
-      localStorage.removeItem(SERVER_TOOLS_CACHE_KEY);
-    }
-  }
-}
+const ServerItem: React.FC<ServerItemProps> = React.memo(({
+  server,
+  serverTools,
+  serverStates,
+  onToggleExpanded,
+  onTestConnection,
+  onRemoveServer,
+  onEditServer,
+  onCopyCommand,
+  getTransportIcon,
+  getScopeIcon,
+  getScopeDisplayName,
+  trackEvent
+}) => {
+  const state = serverStates[server.name] || {
+    isExpanded: false,
+    isTesting: false,
+    isRemoving: false,
+    isCopied: false
+  };
+
+  const isCopied = state.isCopied;
+  const isExpanded = state.isExpanded;
+  const isTesting = state.isTesting;
+  const isRemoving = state.isRemoving;
+
+  const tools = serverTools[server.name] || [];
+  const isConnected = server.status?.running || false;
+  const hasTools = tools.length > 0;
+
+  // 渲染工具标签
+  const renderToolTags = useMemo(() => {
+    return tools.slice(0, MAX_RENDER_TOOLS).map(tool => {
+      const isMcpToolResult = isMcpTool(tool);
+      const displayName = isMcpToolResult ? formatMcpToolName(tool).method : tool;
+      const title = isMcpToolResult ? formatMcpToolName(tool).provider : tool;
+
+      return (
+        <span
+          key={tool}
+          className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full border border-primary/20"
+          title={title}
+        >
+          {displayName}
+        </span>
+      );
+    });
+  }, [tools]);
+
+  return (
+    <motion.div
+      key={server.name}
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="group p-4 rounded-lg border border-border bg-card hover:bg-accent/5 hover:border-primary/20 transition-all overflow-hidden"
+    >
+      <div className="space-y-2">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-primary/10 rounded">
+                {getTransportIcon(server.transport)}
+              </div>
+              <h4 className="font-medium truncate">{server.name}</h4>
+              {isConnected && (
+                <Badge variant="outline" className="gap-1 flex-shrink-0 border-green-500/50 text-green-600 bg-green-500/10">
+                  <CheckCircle className="h-3 w-3" />
+                  Running
+                </Badge>
+              )}
+            </div>
+
+            {/* 命令行显示 */}
+            {server.command && !isExpanded && (
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground font-mono truncate pl-9 flex-1" title={server.command}>
+                  {server.command}
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onToggleExpanded(server.name)}
+                  className="h-6 px-2 text-xs hover:bg-primary/10"
+                >
+                  <ChevronDown className="h-3 w-3 mr-1" />
+                  Show full
+                </Button>
+              </div>
+            )}
+
+            {/* URL显示 */}
+            {server.transport === "sse" && server.url && !isExpanded && (
+              <div className="overflow-hidden">
+                <p className="text-xs text-muted-foreground font-mono truncate pl-9" title={server.url}>
+                  {server.url}
+                </p>
+              </div>
+            )}
+
+            {/* 环境变量显示 */}
+            {Object.keys(server.env).length > 0 && !isExpanded && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground pl-9">
+                <span>Environment variables: {Object.keys(server.env).length}</span>
+              </div>
+            )}
+          </div>
+
+          {/* 操作按钮 */}
+          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onEditServer(server)}
+              className="hover:bg-blue-500/10 hover:text-blue-600"
+              title="Edit server"
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onTestConnection(server.name)}
+              disabled={isTesting}
+              className="hover:bg-green-500/10 hover:text-green-600"
+            >
+              {isTesting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onRemoveServer(server.name)}
+              disabled={isRemoving}
+              className="hover:bg-destructive/10 hover:text-destructive"
+            >
+              {isRemoving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* 展开详情 */}
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="pl-9 space-y-3 pt-2 border-t border-border/50"
+          >
+            {server.command && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-muted-foreground">Command</p>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onCopyCommand(server.command!, server.name)}
+                      className="h-6 px-2 text-xs hover:bg-primary/10"
+                    >
+                      <Copy className="h-3 w-3 mr-1" />
+                      {isCopied ? "Copied!" : "Copy"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onToggleExpanded(server.name)}
+                      className="h-6 px-2 text-xs hover:bg-primary/10"
+                    >
+                      <ChevronUp className="h-3 w-3 mr-1" />
+                      Hide
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs font-mono bg-muted/50 p-2 rounded break-all">
+                  {server.command}
+                </p>
+              </div>
+            )}
+
+            {server.args && server.args.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Arguments</p>
+                <div className="text-xs font-mono bg-muted/50 p-2 rounded space-y-1">
+                  {server.args.map((arg, idx) => (
+                    <div key={idx} className="break-all">
+                      <span className="text-muted-foreground mr-2">[{idx}]</span>
+                      {arg}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {server.transport === "sse" && server.url && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">URL</p>
+                <p className="text-xs font-mono bg-muted/50 p-2 rounded break-all">
+                  {server.url}
+                </p>
+              </div>
+            )}
+
+            {Object.keys(server.env).length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Environment Variables</p>
+                <div className="text-xs font-mono bg-muted/50 p-2 rounded space-y-1">
+                  {Object.entries(server.env).map(([key, value]) => (
+                    <div key={key} className="break-all">
+                      <span className="text-primary">{key}</span>
+                      <span className="text-muted-foreground mx-1">=</span>
+                      <span>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* 工具和连接状态 */}
+        <div className="pl-9 mt-3 space-y-2">
+          <div className="flex items-center gap-2 text-xs">
+            {hasTools ? (
+              <>
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span className="text-green-600 font-medium">
+                  ✓ {server.name} is connected
+                </span>
+              </>
+            ) : (
+              <>
+                <XCircle className="h-4 w-4 text-red-500" />
+                <span className="text-red-600 font-medium">
+                  ✗ {server.name} failed to connect
+                </span>
+              </>
+            )}
+          </div>
+
+          {hasTools && (
+            <div className="flex flex-wrap gap-2">
+              {renderToolTags}
+              {tools.length > MAX_RENDER_TOOLS && (
+                <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">
+                  +{tools.length - MAX_RENDER_TOOLS} more
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+});
+
+ServerItem.displayName = 'ServerItem';
 
 /**
- * 根据服务器名称推断工具列表
+ * Generate MCP tools based on server type and naming patterns
+ * This replaces the old inferToolsFromServerName with a cleaner approach
  */
-function inferToolsFromServerName(serverName: string): string[] {
+function generateMcpToolsForServer(serverName: string): string[] {
   const nameLower = serverName.toLowerCase();
+  const nameSlug = serverName.replace(/\s+/g, '_').replace(/-/g, '_');
 
+  // Database servers
   if (nameLower.includes('postgres') || nameLower.includes('db') || nameLower.includes('database')) {
-    return ['query', 'connect', 'list_tables', 'describe'];
-  }
-  if (nameLower.includes('git') || nameLower.includes('version')) {
-    return ['status', 'commit', 'push', 'pull', 'branch'];
-  }
-  if (nameLower.includes('fs') || nameLower.includes('file') || nameLower.includes('storage')) {
-    return ['read', 'write', 'delete', 'list', 'search'];
-  }
-  if (nameLower.includes('http') || nameLower.includes('web') || nameLower.includes('api')) {
-    return ['get', 'post', 'put', 'delete', 'list'];
-  }
-  if (nameLower.includes('search') || nameLower.includes('vector')) {
-    return ['search', 'index', 'query', 'upsert'];
+    return [
+      `mcp__${nameSlug}__query`,
+      `mcp__${nameSlug}__connect`,
+      `mcp__${nameSlug}__list_tables`,
+      `mcp__${nameSlug}__describe`,
+      `mcp__${nameSlug}__execute`
+    ];
   }
 
-  // 无法识别时返回空数组
-  return [];
+  // Git/version control
+  if (nameLower.includes('git') || nameLower.includes('github') || nameLower.includes('version')) {
+    return [
+      `mcp__${nameSlug}__status`,
+      `mcp__${nameSlug}__commit`,
+      `mcp__${nameSlug}__push`,
+      `mcp__${nameSlug}__pull`,
+      `mcp__${nameSlug}__branch`,
+      `mcp__${nameSlug}__create_issue`
+    ];
+  }
+
+  // File system
+  if (nameLower.includes('fs') || nameLower.includes('file') || nameLower.includes('storage')) {
+    return [
+      `mcp__${nameSlug}__read`,
+      `mcp__${nameSlug}__write`,
+      `mcp__${nameSlug}__delete`,
+      `mcp__${nameSlug}__list`,
+      `mcp__${nameSlug}__search`
+    ];
+  }
+
+  // HTTP/API
+  if (nameLower.includes('http') || nameLower.includes('web') || nameLower.includes('api')) {
+    return [
+      `mcp__${nameSlug}__get`,
+      `mcp__${nameSlug}__post`,
+      `mcp__${nameSlug}__put`,
+      `mcp__${nameSlug}__delete`,
+      `mcp__${nameSlug}__list`
+    ];
+  }
+
+  // Docker/containers
+  if (nameLower.includes('docker') || nameLower.includes('container')) {
+    return [
+      `mcp__${nameSlug}__run`,
+      `mcp__${nameSlug}__stop`,
+      `mcp__${nameSlug}__list`,
+      `mcp__${nameSlug}__logs`,
+      `mcp__${nameSlug}__build`
+    ];
+  }
+
+  // Search engines
+  if (nameLower.includes('search') || nameLower.includes('vector')) {
+    return [
+      `mcp__${nameSlug}__search`,
+      `mcp__${nameSlug}__index`,
+      `mcp__${nameSlug}__query`,
+      `mcp__${nameSlug}__upsert`
+    ];
+  }
+
+  // Generic MCP tool
+  return [`mcp__${nameSlug}__execute`];
 }
 
 /**
@@ -134,7 +638,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
 
   // 初始化加载缓存
   useEffect(() => {
-    const cachedTools = getCachedServerTools();
+    const cachedTools = CacheManager.get();
     if (Object.keys(cachedTools).length > 0) {
       setServerTools(cachedTools);
     }
@@ -145,7 +649,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
    */
   const updateServerTools = useCallback((newTools: Record<string, string[]>): void => {
     setServerTools(newTools);
-    setCachedServerTools(newTools);
+    CacheManager.set(newTools);
   }, []);
 
   /**
@@ -164,7 +668,10 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
         const batchResults = await Promise.allSettled(
           batch.map(async (server) => {
             const details = await api.mcpGet(server.name);
-            const tools = details.status?.running ? inferToolsFromServerName(server.name) : [];
+            // Use real tools from server details, fallback to inference if not available
+            const tools = details.tools && details.tools.length > 0
+              ? details.tools
+              : (details.status?.running ? generateMcpToolsForServer(server.name) : []);
             return { name: server.name, tools };
           })
         );
@@ -243,7 +750,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
       setServerTools(prev => {
         const newTools = { ...prev };
         delete newTools[name];
-        setCachedServerTools(newTools);
+        CacheManager.set(newTools);
         return newTools;
       });
 
@@ -268,7 +775,10 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
       setTestingServer(name);
 
       const details = await api.mcpGet(name);
-      const tools = details.status?.running ? inferToolsFromServerName(name) : [];
+      // Use real tools from server details, fallback to inference if not available
+      const tools = details.tools && details.tools.length > 0
+        ? details.tools
+        : (details.status?.running ? generateMcpToolsForServer(name) : []);
 
       updateServerTools({ ...serverTools, [name]: tools });
 
@@ -546,8 +1056,9 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
                     <span
                       key={tool}
                       className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full border border-primary/20"
+                      title={isMcpTool(tool) ? formatMcpToolName(tool).provider : tool}
                     >
-                      {tool}
+                      {isMcpTool(tool) ? formatMcpToolName(tool).method : tool}
                     </span>
                   ))}
                 </div>

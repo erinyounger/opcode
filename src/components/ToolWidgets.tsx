@@ -1,7 +1,28 @@
-import React, { useState } from "react";
-import { 
-  CheckCircle2, 
-  Circle, 
+// ============================================================================
+// 导入依赖
+// ============================================================================
+
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useEffect,
+  type ReactNode,
+  type ComponentType
+} from "react";
+
+// UI组件导入
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+
+// 图标导入
+import {
+  CheckCircle2,
+  Circle,
   Clock,
   FolderOpen,
   FileText,
@@ -46,188 +67,462 @@ import {
   LayoutGrid,
   LayoutList,
   Activity,
-  Hash,
+  Hash
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+
+// 工具和第三方库导入
 import { cn } from "@/lib/utils";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { useTheme } from "@/hooks";
-import { Button } from "@/components/ui/button";
 import { createPortal } from "react-dom";
 import * as Diff from 'diff';
-import { Card, CardContent } from "@/components/ui/card";
 import { detectLinks, makeLinksClickable } from "@/lib/linkDetector";
 import ReactMarkdown from "react-markdown";
 import { open } from "@tauri-apps/plugin-shell";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
 
+// MCP工具导入
+import {
+  formatMcpToolName,
+  getToolIcon,
+  separateTools,
+  groupMcpToolsByProvider,
+  type McpToolInfo
+} from "@/lib/mcpTools";
+
+// ============================================================================
+// 类型定义
+// ============================================================================
+
+/** Todo项类型 */
+interface TodoItem {
+  id?: string;
+  content: string;
+  status: 'completed' | 'in_progress' | 'pending';
+  priority?: 'high' | 'medium' | 'low';
+}
+
+/** LS结果项类型 */
+interface LSEntry {
+  path: string;
+  name: string;
+  type: 'file' | 'directory';
+  level: number;
+}
+
+/** 读取结果类型 */
+interface ReadResult {
+  content: string;
+  metadata?: {
+    lines?: number;
+    size?: number;
+    encoding?: string;
+  };
+}
+
+/** Bash结果类型 */
+interface BashResult {
+  stdout?: string;
+  stderr?: string;
+  exit_code?: number;
+}
+
+/** Grep结果类型 */
+interface GrepResult {
+  matches: Array<{
+    line_number: number;
+    content: string;
+    file_path: string;
+  }>;
+  total_matches: number;
+}
+
+/** Web搜索结果类型 */
+interface WebSearchResult {
+  results: Array<{
+    title: string;
+    url: string;
+    snippet: string;
+  }>;
+  query: string;
+}
+
+/** Web获取结果类型 */
+interface WebFetchResult {
+  title?: string;
+  content: string;
+  url?: string;
+}
+
+/** 组件属性基础类型 */
+interface BaseWidgetProps {
+  className?: string;
+  result?: any;
+}
+
+/** 错误边界状态类型 */
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+// ============================================================================
+// 常量定义
+// ============================================================================
+
+/** 最大渲染项数量 */
+const MAX_RENDER_ITEMS = 1000;
+
+/** 自动展开目录的最大深度 */
+const MAX_AUTO_EXPAND_DEPTH = 3;
+
+/** 代码高亮主题缓存键 */
+const SYNTAX_THEME_CACHE_KEY = 'claude_syntax_theme';
+
+// ============================================================================
+// 工具函数
+// ============================================================================
+
 /**
- * Widget for TodoWrite tool - displays a beautiful TODO list
+ * 获取状态图标
+ * @param status - Todo状态
+ * @returns 对应的图标元素
  */
-export const TodoWidget: React.FC<{ todos: any[]; result?: any }> = ({ todos, result: _result }) => {
-  const statusIcons = {
+const getStatusIcon = (status: TodoItem['status']): ReactNode => {
+  const iconMap = {
     completed: <CheckCircle2 className="h-4 w-4 text-green-500" />,
     in_progress: <Clock className="h-4 w-4 text-blue-500 animate-pulse" />,
     pending: <Circle className="h-4 w-4 text-muted-foreground" />
   };
 
-  const priorityColors = {
+  return iconMap[status] || iconMap.pending;
+};
+
+/**
+ * 获取优先级颜色类名
+ * @param priority - 优先级
+ * @returns 对应的样式类名
+ */
+const getPriorityColorClass = (priority: TodoItem['priority']): string => {
+  const colorMap: Record<string, string> = {
     high: "bg-red-500/10 text-red-500 border-red-500/20",
     medium: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
     low: "bg-green-500/10 text-green-500 border-green-500/20"
   };
 
+  return colorMap[priority || 'medium'] || colorMap.medium;
+};
+
+/**
+ * Todo项组件
+ */
+interface TodoItemProps {
+  todo: TodoItem;
+  index: number;
+}
+
+const TodoItemComponent: React.FC<TodoItemProps> = React.memo(({ todo, index }) => {
+  // 输入验证和安全处理
+  const safeTodo = useMemo(() => ({
+    id: typeof todo.id === 'string' || typeof todo.id === 'number' ? String(todo.id) : `todo-${index}`,
+    content: typeof todo.content === 'string' ? todo.content : 'Invalid content',
+    status: ['completed', 'in_progress', 'pending'].includes(todo.status) ? todo.status : 'pending' as const,
+    priority: ['high', 'medium', 'low'].includes(todo.priority || '') ? todo.priority : undefined
+  }), [todo, index]);
+
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 p-3 rounded-lg border bg-card/50 transition-opacity",
+        safeTodo.status === "completed" && "opacity-60"
+      )}
+    >
+      <div className="mt-0.5 flex-shrink-0">
+        {getStatusIcon(safeTodo.status)}
+      </div>
+      <div className="flex-1 space-y-1 min-w-0">
+        <p
+          className={cn(
+            "text-sm break-words",
+            safeTodo.status === "completed" && "line-through"
+          )}
+        >
+          {safeTodo.content}
+        </p>
+        {safeTodo.priority && (
+          <Badge
+            variant="outline"
+            className={cn("text-xs", getPriorityColorClass(safeTodo.priority))}
+          >
+            {safeTodo.priority}
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+});
+
+TodoItemComponent.displayName = 'TodoItemComponent';
+
+/**
+ * TodoWidget组件 - 显示美观的TODO列表
+ */
+interface TodoWidgetProps extends BaseWidgetProps {
+  todos: TodoItem[] | any[];
+}
+
+export const TodoWidget: React.FC<TodoWidgetProps> = ({ todos, result: _result }) => {
+  // 输入验证和类型转换
+  const validatedTodos = useMemo(() => {
+    if (!Array.isArray(todos)) {
+      return [];
+    }
+
+    return todos
+      .filter((todo): todo is TodoItem => {
+        return todo !== null && typeof todo === 'object' && typeof todo.content === 'string';
+      })
+      .slice(0, MAX_RENDER_ITEMS); // 限制渲染数量
+  }, [todos]);
+
+  // 统计信息
+  const todoStats = useMemo(() => {
+    const stats = {
+      completed: 0,
+      in_progress: 0,
+      pending: 0
+    };
+
+    validatedTodos.forEach(todo => {
+      if (todo.status in stats) {
+        stats[todo.status as keyof typeof stats]++;
+      }
+    });
+
+    return stats;
+  }, [validatedTodos]);
+
+  // 如果没有todos，显示空状态
+  if (validatedTodos.length === 0) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 mb-3">
+          <FileEdit className="h-4 w-4 text-primary" />
+          <span className="text-sm font-medium">Todo List</span>
+        </div>
+        <div className="text-center py-8 text-muted-foreground">
+          <FileEdit className="h-12 w-12 mx-auto mb-3 opacity-50" />
+          <p className="text-sm">No todos available</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 mb-3">
-        <FileEdit className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">Todo List</span>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <FileEdit className="h-4 w-4 text-primary" />
+          <span className="text-sm font-medium">Todo List</span>
+          <Badge variant="outline" className="text-xs">
+            {validatedTodos.length} items
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>{todoStats.completed} completed</span>
+          <span>•</span>
+          <span>{todoStats.in_progress} in progress</span>
+          <span>•</span>
+          <span>{todoStats.pending} pending</span>
+        </div>
       </div>
       <div className="space-y-2">
-        {todos.map((todo, idx) => (
-          <div
-            key={todo.id || idx}
-            className={cn(
-              "flex items-start gap-3 p-3 rounded-lg border bg-card/50",
-              todo.status === "completed" && "opacity-60"
-            )}
-          >
-            <div className="mt-0.5">
-              {statusIcons[todo.status as keyof typeof statusIcons] || statusIcons.pending}
-            </div>
-            <div className="flex-1 space-y-1">
-              <p className={cn(
-                "text-sm",
-                todo.status === "completed" && "line-through"
-              )}>
-                {todo.content}
-              </p>
-              {todo.priority && (
-                <Badge 
-                  variant="outline" 
-                  className={cn("text-xs", priorityColors[todo.priority as keyof typeof priorityColors])}
-                >
-                  {todo.priority}
-                </Badge>
-              )}
-            </div>
-          </div>
-        ))}
+        <AnimatePresence>
+          {validatedTodos.map((todo, index) => (
+            <motion.div
+              key={todo.id || index}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <TodoItemComponent todo={todo} index={index} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </div>
   );
 };
 
+TodoWidget.displayName = 'TodoWidget';
+
 /**
- * Widget for LS (List Directory) tool
+ * 提取结果内容的安全函数
+ * @param result - 原始结果对象
+ * @returns 提取的内容字符串
  */
-export const LSWidget: React.FC<{ path: string; result?: any }> = ({ path, result }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  
-  // Extract result content if available
-    let resultContent = '';
-  if (result) {
+const extractResultContent = (result: any): string => {
+  if (!result) return '';
+
+  try {
     if (typeof result.content === 'string') {
-      resultContent = result.content;
-    } else if (result.content && typeof result.content === 'object') {
-      if (result.content.text) {
-        resultContent = result.content.text;
-      } else if (Array.isArray(result.content)) {
-        resultContent = result.content
-          .map((c: any) => (typeof c === 'string' ? c : c.text || JSON.stringify(c)))
-          .join('\n');
-      } else {
-        resultContent = JSON.stringify(result.content, null, 2);
-      }
+      return result.content;
     }
+
+    if (result.content && typeof result.content === 'object') {
+      if (typeof result.content.text === 'string') {
+        return result.content.text;
+      }
+
+      if (Array.isArray(result.content)) {
+        return result.content
+          .map((c: any) => {
+            if (typeof c === 'string') return c;
+            if (c && typeof c.text === 'string') return c.text;
+            return JSON.stringify(c);
+          })
+          .filter(Boolean)
+          .join('\n');
+      }
+
+      return JSON.stringify(result.content, null, 2);
+    }
+
+    return String(result);
+  } catch (error) {
+    console.warn('Failed to extract result content:', error);
+    return '';
   }
-  
-  // Build title: "List" + path
-  const pathName = path.split(/[/\\]/).pop() || path;
-  const title = `List ${pathName}`;
-  
+};
+
+/**
+ * LSWidget组件 - 目录列表工具
+ */
+interface LSWidgetProps extends BaseWidgetProps {
+  path: string;
+}
+
+export const LSWidget: React.FC<LSWidgetProps> = React.memo(({ path, result }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // 路径验证和安全处理
+  const validatedPath = useMemo(() => {
+    if (typeof path !== 'string' || !path.trim()) {
+      return 'Unknown Path';
+    }
+    return path;
+  }, [path]);
+
+  // 提取结果内容
+  const resultContent = useMemo(() => {
+    return extractResultContent(result);
+  }, [result]);
+
+  // 构建标题
+  const title = useMemo(() => {
+    const pathParts = validatedPath.split(/[/\\]/).filter(Boolean);
+    const pathName = pathParts.pop() || validatedPath;
+    return `List ${pathName}`;
+  }, [validatedPath]);
+
+  // 切换展开状态
+  const handleToggleExpanded = useCallback(() => {
+    if (result) {
+      setIsExpanded(prev => !prev);
+    }
+  }, [result]);
+
+  const hasContent = result && resultContent.trim().length > 0;
+
   return (
-    <div className="rounded-lg border border-gray-500/20 bg-gray-500/5 overflow-hidden">
+    <div className="rounded-lg border border-border bg-muted/5 overflow-hidden">
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-500/10 transition-colors"
-        disabled={!result}
+        onClick={handleToggleExpanded}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/10 transition-colors disabled:cursor-not-allowed"
+        disabled={!hasContent}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <FolderOpen className="h-4 w-4 text-primary flex-shrink-0" />
-          <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
+          <span className="text-xs font-mono text-muted-foreground truncate">
             {title}
           </span>
-      {!result && (
+          {!hasContent && (
             <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-          <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-          <span>Loading...</span>
+              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+              <span>Loading...</span>
             </div>
           )}
         </div>
-        {result && (
+        {hasContent && (
           <ChevronRight className={cn(
-            "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
+            "h-4 w-4 text-muted-foreground transition-transform flex-shrink-0",
             isExpanded && "rotate-90"
           )} />
         )}
       </button>
-      
-      {isExpanded && result && resultContent && (
-        <div className="px-4 pb-4 pt-2 border-t border-gray-500/20">
+
+      {isExpanded && hasContent && (
+        <div className="px-4 pb-4 pt-2 border-t border-border">
           <LSResultWidget content={resultContent} />
         </div>
       )}
     </div>
   );
-};
+});
+
+LSWidget.displayName = 'LSWidget';
 
 /**
- * Widget for LS tool result - displays directory tree structure
+ * LSResultWidget组件 - 显示目录树结构
  */
-export const LSResultWidget: React.FC<{ content: string }> = ({ content }) => {
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
-  
-  // Parse the directory tree structure
-  const parseDirectoryTree = (rawContent: string) => {
+interface LSResultWidgetProps {
+  content: string;
+}
+
+/**
+ * 解析目录树结构
+ * @param rawContent - 原始内容
+ * @returns 解析后的条目数组
+ */
+const parseDirectoryTree = (rawContent: string): LSEntry[] => {
+  if (!rawContent || typeof rawContent !== 'string') {
+    return [];
+  }
+
+  try {
     const lines = rawContent.split('\n');
-    const entries: Array<{
-      path: string;
-      name: string;
-      type: 'file' | 'directory';
-      level: number;
-    }> = [];
-    
+    const entries: LSEntry[] = [];
+
     let currentPath: string[] = [];
-    
+
     for (const line of lines) {
-      // Skip NOTE section and everything after it
+      // 跳过NOTE部分及其后的内容
       if (line.startsWith('NOTE:')) {
         break;
       }
-      
-      // Skip empty lines
-      if (!line.trim()) continue;
-      
-      // Calculate indentation level
+
+      // 跳过空行
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+
+      // 计算缩进级别
       const indent = line.match(/^(\s*)/)?.[1] || '';
-      const level = Math.floor(indent.length / 2);
-      
-      // Extract the entry name
-      const entryMatch = line.match(/^\s*-\s+(.+?)(\/$)?$/);
+      const level = Math.min(Math.floor(indent.length / 2), MAX_AUTO_EXPAND_DEPTH);
+
+      // 提取条目名称
+      const entryMatch = trimmedLine.match(/^-\s+(.+?)(\/$)?$/);
       if (!entryMatch) continue;
-      
+
       const fullName = entryMatch[1];
-      const isDirectory = line.trim().endsWith('/');
+      const isDirectory = trimmedLine.endsWith('/');
       const name = isDirectory ? fullName : fullName;
-      
-      // Update current path based on level
+
+      // 更新当前路径
       currentPath = currentPath.slice(0, level);
       currentPath.push(name);
-      
+
       entries.push({
         path: currentPath.join('/'),
         name,
@@ -235,13 +530,162 @@ export const LSResultWidget: React.FC<{ content: string }> = ({ content }) => {
         level,
       });
     }
-    
-    return entries;
+
+    return entries.slice(0, MAX_RENDER_ITEMS); // 限制渲染数量
+  } catch (error) {
+    console.warn('Failed to parse directory tree:', error);
+    return [];
+  }
+};
+
+/**
+ * 获取文件图标
+ * @param name - 文件名
+ * @param isExpanded - 是否展开（仅用于目录）
+ * @returns 图标元素
+ */
+const getFileIcon = (name: string, _isExpanded: boolean): ReactNode => {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+
+  // 文件类型图标映射
+  const fileIconMap: Record<string, { icon: ReactNode; color: string }> = {
+    'rs': { icon: <FileCode className="h-3.5 w-3.5" />, color: 'text-orange-500' },
+    'ts': { icon: <FileCode className="h-3.5 w-3.5" />, color: 'text-blue-500' },
+    'tsx': { icon: <FileCode className="h-3.5 w-3.5" />, color: 'text-blue-500' },
+    'js': { icon: <FileCode className="h-3.5 w-3.5" />, color: 'text-yellow-500' },
+    'jsx': { icon: <FileCode className="h-3.5 w-3.5" />, color: 'text-yellow-500' },
+    'py': { icon: <FileCode className="h-3.5 w-3.5" />, color: 'text-green-500' },
+    'json': { icon: <FileCode className="h-3.5 w-3.5" />, color: 'text-emerald-500' },
+    'md': { icon: <FileText className="h-3.5 w-3.5" />, color: 'text-slate-500' },
+    'txt': { icon: <FileText className="h-3.5 w-3.5" />, color: 'text-slate-500' },
+    'toml': { icon: <FileText className="h-3.5 w-3.5" />, color: 'text-purple-500' },
+    'yaml': { icon: <FileText className="h-3.5 w-3.5" />, color: 'text-purple-500' },
+    'yml': { icon: <FileText className="h-3.5 w-3.5" />, color: 'text-purple-500' },
+    'lock': { icon: <FileText className="h-3.5 w-3.5" />, color: 'text-orange-600' },
+    'gitignore': { icon: <FileText className="h-3.5 w-3.5" />, color: 'text-gray-500' },
   };
-  
-  const entries = parseDirectoryTree(content);
-  
-  const toggleDirectory = (path: string) => {
+
+  const fileConfig = fileIconMap[ext];
+  if (fileConfig) {
+    return <span className={fileConfig.color}>{fileConfig.icon}</span>;
+  }
+
+  return <FileText className="h-3.5 w-3.5 text-slate-500" />;
+};
+
+/**
+ * 条目组件
+ */
+interface EntryItemProps {
+  entry: LSEntry;
+  entries: LSEntry[];
+  expandedDirs: Set<string>;
+  onToggleDirectory: (path: string) => void;
+  isRoot?: boolean;
+}
+
+const EntryItem: React.FC<EntryItemProps> = React.memo(({
+  entry,
+  entries,
+  expandedDirs,
+  onToggleDirectory,
+  isRoot = false
+}) => {
+  // 检查是否有子项
+  const hasChildren = useMemo(() => {
+    if (entry.type !== 'directory') return false;
+    return entries.some(e =>
+      e.path.startsWith(entry.path + '/') && e.level === entry.level + 1
+    );
+  }, [entry, entries]);
+
+  const isExpanded = expandedDirs.has(entry.path) || isRoot;
+
+  // 获取子项
+  const children = useMemo(() => {
+    if (!hasChildren || !isExpanded) return [];
+    return entries.filter(e => {
+      if (e.level !== entry.level + 1) return false;
+      const entryParts = e.path.split('/').filter(Boolean);
+      const parentParts = entry.path.split('/').filter(Boolean);
+      return entryParts.length === parentParts.length + 1 &&
+             parentParts.every((part, i) => part === entryParts[i]);
+    });
+  }, [entries, entry, hasChildren, isExpanded]);
+
+  // 获取图标
+  const icon = useMemo(() => {
+    if (entry.type === 'directory') {
+      return isExpanded ?
+        <FolderOpen className="h-3.5 w-3.5 text-blue-500" /> :
+        <Folder className="h-3.5 w-3.5 text-blue-500" />;
+    }
+    return getFileIcon(entry.name, isExpanded);
+  }, [entry.type, entry.name, isExpanded]);
+
+  const handleToggle = useCallback(() => {
+    if (hasChildren) {
+      onToggleDirectory(entry.path);
+    }
+  }, [hasChildren, entry.path, onToggleDirectory]);
+
+  return (
+    <div className="select-text">
+      <div
+        className={cn(
+          "flex items-center gap-1.5 px-2 py-1 rounded hover:bg-muted/50 transition-colors",
+          entry.type === 'directory' && hasChildren && "cursor-pointer"
+        )}
+        style={{ paddingLeft: `${entry.level * 16 + 8}px` }}
+        onClick={handleToggle}
+      >
+        {entry.type === 'directory' && hasChildren ? (
+          <ChevronRight className={cn(
+            "h-3 w-3 text-muted-foreground transition-transform",
+            isExpanded && "rotate-90"
+          )} />
+        ) : (
+          <div className="w-3" />
+        )}
+        <span className="flex-shrink-0">
+          {icon}
+        </span>
+        <span className="text-xs font-mono text-foreground truncate">
+          {entry.name}
+        </span>
+      </div>
+      {isExpanded && hasChildren && children.length > 0 && (
+        <div className="ml-0">
+          {children.map(child => (
+            <EntryItem
+              key={child.path}
+              entry={child}
+              entries={entries}
+              expandedDirs={expandedDirs}
+              onToggleDirectory={onToggleDirectory}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
+EntryItem.displayName = 'EntryItem';
+
+export const LSResultWidget: React.FC<LSResultWidgetProps> = React.memo(({ content }) => {
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
+
+  // 解析目录树结构
+  const entries = useMemo(() => parseDirectoryTree(content), [content]);
+
+  // 获取根级条目
+  const rootEntries = useMemo(() => {
+    return entries.filter(entry => entry.level === 0);
+  }, [entries]);
+
+  // 切换目录展开状态
+  const handleToggleDirectory = useCallback((path: string) => {
     setExpandedDirs(prev => {
       const next = new Set(prev);
       if (next.has(path)) {
@@ -251,110 +695,43 @@ export const LSResultWidget: React.FC<{ content: string }> = ({ content }) => {
       }
       return next;
     });
-  };
-  
-  // Group entries by parent for collapsible display
-  const getChildren = (parentPath: string, parentLevel: number) => {
-    return entries.filter(e => {
-      if (e.level !== parentLevel + 1) return false;
-      const parentParts = parentPath.split('/').filter(Boolean);
-      const entryParts = e.path.split('/').filter(Boolean);
-      
-      // Check if this entry is a direct child of the parent
-      if (entryParts.length !== parentParts.length + 1) return false;
-      
-      // Check if all parent parts match
-      for (let i = 0; i < parentParts.length; i++) {
-        if (parentParts[i] !== entryParts[i]) return false;
-      }
-      
-      return true;
-    });
-  };
-  
-  const renderEntry = (entry: typeof entries[0], isRoot = false) => {
-    const hasChildren = entry.type === 'directory' && 
-      entries.some(e => e.path.startsWith(entry.path + '/') && e.level === entry.level + 1);
-    const isExpanded = expandedDirs.has(entry.path) || isRoot;
-    
-    const getIcon = () => {
-      if (entry.type === 'directory') {
-        return isExpanded ? 
-          <FolderOpen className="h-3.5 w-3.5 text-blue-500" /> : 
-          <Folder className="h-3.5 w-3.5 text-blue-500" />;
-      }
-      
-      // File type icons based on extension
-      const ext = entry.name.split('.').pop()?.toLowerCase();
-      switch (ext) {
-        case 'rs':
-          return <FileCode className="h-3.5 w-3.5 text-orange-500" />;
-        case 'toml':
-        case 'yaml':
-        case 'yml':
-        case 'json':
-          return <FileText className="h-3.5 w-3.5 text-yellow-500" />;
-        case 'md':
-          return <FileText className="h-3.5 w-3.5 text-blue-400" />;
-        case 'js':
-        case 'jsx':
-        case 'ts':
-        case 'tsx':
-          return <FileCode className="h-3.5 w-3.5 text-yellow-400" />;
-        case 'py':
-          return <FileCode className="h-3.5 w-3.5 text-blue-500" />;
-        case 'go':
-          return <FileCode className="h-3.5 w-3.5 text-cyan-500" />;
-        case 'sh':
-        case 'bash':
-          return <Terminal className="h-3.5 w-3.5 text-green-500" />;
-        default:
-          return <FileText className="h-3.5 w-3.5 text-muted-foreground" />;
-      }
-    };
-    
+  }, []);
+
+  // 展开所有根级目录（默认）
+  useEffect(() => {
+    const rootDirs = rootEntries.filter(entry => entry.type === 'directory');
+    if (rootDirs.length > 0 && expandedDirs.size === 0) {
+      setExpandedDirs(new Set(rootDirs.map(entry => entry.path)));
+    }
+  }, [rootEntries, expandedDirs.size]);
+
+  // 如果没有内容，显示空状态
+  if (!content || entries.length === 0) {
     return (
-      <div key={entry.path}>
-        <div 
-          className={cn(
-            "flex items-center gap-2 py-1 px-2 rounded hover:bg-muted/50 transition-colors cursor-pointer",
-            !isRoot && "ml-4"
-          )}
-          onClick={() => entry.type === 'directory' && hasChildren && toggleDirectory(entry.path)}
-        >
-          {entry.type === 'directory' && hasChildren && (
-            <ChevronRight className={cn(
-              "h-3 w-3 text-muted-foreground transition-transform",
-              isExpanded && "rotate-90"
-            )} />
-          )}
-          {(!hasChildren || entry.type !== 'directory') && (
-            <div className="w-3" />
-          )}
-          {getIcon()}
-          <span className="text-sm font-mono">{entry.name}</span>
-        </div>
-        
-        {entry.type === 'directory' && hasChildren && isExpanded && (
-          <div className="ml-2">
-            {getChildren(entry.path, entry.level).map(child => renderEntry(child))}
-          </div>
-        )}
+      <div className="text-center py-4 text-muted-foreground">
+        <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
+        <p className="text-xs">No directory structure available</p>
       </div>
     );
-  };
-  
-  // Get root entries
-  const rootEntries = entries.filter(e => e.level === 0);
-  
+  }
+
   return (
-    <div className="rounded-lg border bg-muted/20 p-3">
-      <div className="space-y-1">
-        {rootEntries.map(entry => renderEntry(entry, true))}
-      </div>
+    <div className="space-y-1 max-h-96 overflow-auto">
+      {rootEntries.map(entry => (
+        <EntryItem
+          key={entry.path}
+          entry={entry}
+          entries={entries}
+          expandedDirs={expandedDirs}
+          onToggleDirectory={handleToggleDirectory}
+          isRoot
+        />
+      ))}
     </div>
   );
-};
+});
+
+LSResultWidget.displayName = 'LSResultWidget';
 
 /**
  * Widget for Read tool
@@ -1883,74 +2260,12 @@ export const SystemInitializedWidget: React.FC<{
   tools?: string[];
 }> = ({ sessionId, model, cwd, tools = [] }) => {
   const [mcpExpanded, setMcpExpanded] = useState(false);
-  
-  // Separate regular tools from MCP tools
-  const regularTools = tools.filter(tool => !tool.startsWith('mcp__'));
-  const mcpTools = tools.filter(tool => tool.startsWith('mcp__'));
-  
-  // Tool icon mapping for regular tools
-  const toolIcons: Record<string, LucideIcon> = {
-    'task': CheckSquare,
-    'bash': Terminal,
-    'glob': FolderSearch,
-    'grep': Search,
-    'ls': List,
-    'exit_plan_mode': LogOut,
-    'read': FileText,
-    'edit': Edit3,
-    'multiedit': Edit3,
-    'write': FilePlus,
-    'notebookread': Book,
-    'notebookedit': BookOpen,
-    'webfetch': Globe,
-    'todoread': ListChecks,
-    'todowrite': ListPlus,
-    'websearch': Globe2,
-  };
-  
-  // Get icon for a tool, fallback to Wrench
-  const getToolIcon = (toolName: string) => {
-    const normalizedName = toolName.toLowerCase();
-    return toolIcons[normalizedName] || Wrench;
-  };
-  
-  // Format MCP tool name (remove mcp__ prefix and format underscores)
-  const formatMcpToolName = (toolName: string) => {
-    // Remove mcp__ prefix
-    const withoutPrefix = toolName.replace(/^mcp__/, '');
-    // Split by double underscores first (provider separator)
-    const parts = withoutPrefix.split('__');
-    if (parts.length >= 2) {
-      // Format provider name and method name separately
-      const provider = parts[0].replace(/_/g, ' ').replace(/-/g, ' ')
-        .split(' ')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
-      const method = parts.slice(1).join('__').replace(/_/g, ' ')
-        .split(' ')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
-      return { provider, method };
-    }
-    // Fallback formatting
-    return {
-      provider: 'MCP',
-      method: withoutPrefix.replace(/_/g, ' ')
-        .split(' ')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ')
-    };
-  };
-  
-  // Group MCP tools by provider
-  const mcpToolsByProvider = mcpTools.reduce((acc, tool) => {
-    const { provider } = formatMcpToolName(tool);
-    if (!acc[provider]) {
-      acc[provider] = [];
-    }
-    acc[provider].push(tool);
-    return acc;
-  }, {} as Record<string, string[]>);
+
+  // Use shared tool separation logic
+  const { regularTools, mcpTools } = separateTools(tools);
+
+  // Group MCP tools by provider using shared logic
+  const mcpToolsByProvider = groupMcpToolsByProvider(mcpTools);
   
   return (
     <Card className="border-blue-500/20 bg-blue-500/5">

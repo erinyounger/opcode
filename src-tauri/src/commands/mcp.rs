@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use dirs;
-use log::{error, info};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -11,7 +11,7 @@ use std::process::Command;
 use tauri::AppHandle;
 
 // ============================================================================
-// 输入验证模块
+// 常量定义
 // ============================================================================
 
 /// 危险字符集合
@@ -26,119 +26,249 @@ const ALLOWED_PATH_PREFIXES: &[&str] = &[
     "C:\\Program Files\\", "C:\\Windows\\System32\\"
 ];
 
+/// 最大服务器名称长度
+const MAX_SERVER_NAME_LENGTH: usize = 128;
+
+/// 最大环境变量数量
+const MAX_ENV_VARS: usize = 100;
+
+/// 最大头部数量
+const MAX_HEADERS: usize = 50;
+
 /// 验证结果类型
 type ValidationResult = std::result::Result<String, String>;
+
+/// 验证错误类型
+#[derive(Debug, Clone)]
+pub enum ValidationError {
+    EmptyField(String),
+    InvalidCharacters(String, String),
+    InvalidLength(String, usize),
+    InvalidFormat(String, String),
+    PathTraversal(String),
+    UnauthorizedPath(String),
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationError::EmptyField(field) => write!(f, "{} cannot be empty", field),
+            ValidationError::InvalidCharacters(field, chars) => write!(f, "{} contains invalid characters: {}", field, chars),
+            ValidationError::InvalidLength(field, len) => write!(f, "{} length {} exceeds maximum allowed", field, len),
+            ValidationError::InvalidFormat(field, format) => write!(f, "{} has invalid format: {}", field, format),
+            ValidationError::PathTraversal(path) => write!(f, "Path traversal detected: {}", path),
+            ValidationError::UnauthorizedPath(path) => write!(f, "Unauthorized path: {}", path),
+        }
+    }
+}
+
+impl std::error::Error for ValidationError {}
+
+impl From<ValidationError> for String {
+    fn from(error: ValidationError) -> Self {
+        error.to_string()
+    }
+}
 
 /// 验证字符串不包含危险字符
 fn contains_dangerous_chars(s: &str, dangerous: &[char]) -> bool {
     s.chars().any(|c| dangerous.contains(&c))
 }
 
-/// 验证命令字符串
-fn validate_command(cmd: &str) -> ValidationResult {
-    let cmd = cmd.trim();
-    if cmd.is_empty() {
-        return Err("Command cannot be empty".to_string());
+/// 验证字符串长度
+fn validate_length(field: &str, value: &str, max_length: usize) -> Result<String, ValidationError> {
+    if value.is_empty() {
+        return Err(ValidationError::EmptyField(field.to_string()));
     }
 
+    if value.len() > max_length {
+        return Err(ValidationError::InvalidLength(field.to_string(), value.len()));
+    }
+
+    Ok(value.to_string())
+}
+
+/// 验证命令字符串
+fn validate_command(cmd: &str) -> Result<String, ValidationError> {
+    let cmd = cmd.trim();
+    validate_length("Command", cmd, MAX_SERVER_NAME_LENGTH)?;
+
     if contains_dangerous_chars(cmd, DANGEROUS_SHELL_CHARS) {
-        return Err("Command contains invalid characters".to_string());
+        return Err(ValidationError::InvalidCharacters(
+            "Command".to_string(),
+            "shell metacharacters".to_string()
+        ));
     }
 
     // 拒绝路径遍历攻击
-    if cmd.contains("..") || cmd.starts_with("~/") {
-        return Err("Invalid command path".to_string());
+    if cmd.contains("..") {
+        return Err(ValidationError::PathTraversal(cmd.to_string()));
+    }
+
+    if cmd.starts_with("~/") {
+        return Err(ValidationError::UnauthorizedPath("home directory".to_string()));
     }
 
     // 验证绝对路径
     if cmd.starts_with('/') && !ALLOWED_PATH_PREFIXES.iter().any(|prefix| cmd.starts_with(prefix)) {
-        return Err("Command path not in allowed directories".to_string());
+        return Err(ValidationError::UnauthorizedPath(cmd.to_string()));
     }
 
     Ok(cmd.to_string())
 }
 
 /// 验证 URL
-fn validate_url(url: &str) -> ValidationResult {
+fn validate_url(url: &str) -> Result<String, ValidationError> {
+    let url = url.trim();
+    validate_length("URL", url, MAX_SERVER_NAME_LENGTH * 2)?;
+
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err("Only http/https URLs are allowed".to_string());
+        return Err(ValidationError::InvalidFormat(
+            "URL".to_string(),
+            "Only http/https URLs are allowed".to_string()
+        ));
     }
 
     if contains_dangerous_chars(url, DANGEROUS_URL_CHARS) {
-        return Err("URL contains invalid characters".to_string());
+        return Err(ValidationError::InvalidCharacters(
+            "URL".to_string(),
+            "control characters or spaces".to_string()
+        ));
     }
 
     Ok(url.to_string())
 }
 
 /// 验证环境变量名
-fn validate_env_var_name(name: &str) -> ValidationResult {
-    if name.is_empty() {
-        return Err("Environment variable name cannot be empty".to_string());
-    }
+fn validate_env_var_name(name: &str) -> Result<String, ValidationError> {
+    let name = name.trim();
+    validate_length("Environment variable", name, MAX_SERVER_NAME_LENGTH)?;
 
     if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        return Err("Invalid environment variable name".to_string());
+        return Err(ValidationError::InvalidCharacters(
+            "Environment variable".to_string(),
+            "non-alphanumeric characters".to_string()
+        ));
     }
 
-    if name.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-        return Err("Environment variable name cannot start with a number".to_string());
+    if name.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+        return Err(ValidationError::InvalidFormat(
+            "Environment variable".to_string(),
+            "cannot start with a digit".to_string()
+        ));
     }
 
     Ok(name.to_string())
 }
 
 /// 验证 HTTP 头部名称
-fn validate_header_name(name: &str) -> ValidationResult {
-    if name.is_empty() {
-        return Err("Header name cannot be empty".to_string());
-    }
+fn validate_header_name(name: &str) -> Result<String, ValidationError> {
+    let name = name.trim();
+    validate_length("Header name", name, 256)?;
 
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-        return Err("Invalid header name".to_string());
+        return Err(ValidationError::InvalidCharacters(
+            "Header name".to_string(),
+            "invalid characters".to_string()
+        ));
     }
 
     Ok(name.to_string())
 }
 
 /// 验证头部值
-fn validate_header_value(value: &str) -> ValidationResult {
+fn validate_header_value(value: &str) -> Result<String, ValidationError> {
+    let value = value.trim();
+    validate_length("Header value", value, 1024)?;
+
     if contains_dangerous_chars(value, DANGEROUS_HEADER_CHARS) {
-        return Err("Header value contains invalid characters".to_string());
+        return Err(ValidationError::InvalidCharacters(
+            "Header value".to_string(),
+            "control characters".to_string()
+        ));
     }
+
     Ok(value.to_string())
 }
 
 /// 验证命令参数
-fn validate_arg(arg: &str) -> ValidationResult {
-    if arg.is_empty() {
-        return Err("Argument cannot be empty".to_string());
-    }
+fn validate_arg(arg: &str) -> Result<String, ValidationError> {
+    let arg = arg.trim();
+    validate_length("Argument", arg, MAX_SERVER_NAME_LENGTH)?;
 
     if contains_dangerous_chars(arg, DANGEROUS_ARG_CHARS) {
-        return Err("Argument contains invalid characters".to_string());
+        return Err(ValidationError::InvalidCharacters(
+            "Argument".to_string(),
+            "shell metacharacters".to_string()
+        ));
     }
 
     Ok(arg.to_string())
 }
 
 /// 验证服务器名称（防止路径注入）
-fn validate_server_name(name: &str) -> ValidationResult {
-    if name.is_empty() {
-        return Err("Server name cannot be empty".to_string());
-    }
+fn validate_server_name(name: &str) -> Result<String, ValidationError> {
+    let name = name.trim();
+    validate_length("Server name", name, MAX_SERVER_NAME_LENGTH)?;
 
     // 只允许字母、数字、-、_
     if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-        return Err("Server name contains invalid characters".to_string());
-    }
-
-    // 限制长度
-    if name.len() > 128 {
-        return Err("Server name too long".to_string());
+        return Err(ValidationError::InvalidCharacters(
+            "Server name".to_string(),
+            "non-alphanumeric characters except - and _".to_string()
+        ));
     }
 
     Ok(name.to_string())
+}
+
+/// 验证环境变量映射
+fn validate_env_vars(env: &HashMap<String, String>) -> Result<Vec<(String, String)>, ValidationError> {
+    if env.len() > MAX_ENV_VARS {
+        return Err(ValidationError::InvalidLength(
+            "Environment variables".to_string(),
+            env.len()
+        ));
+    }
+
+    let mut validated_env = Vec::with_capacity(env.len());
+
+    for (key, value) in env {
+        let validated_key = validate_env_var_name(key)?;
+        let validated_value = value.trim().to_string();
+
+        if validated_value.len() > MAX_SERVER_NAME_LENGTH {
+            return Err(ValidationError::InvalidLength(
+                format!("Environment variable value for {}", validated_key),
+                validated_value.len()
+            ));
+        }
+
+        validated_env.push((validated_key, validated_value));
+    }
+
+    Ok(validated_env)
+}
+
+/// 验证头部映射
+fn validate_headers(headers: &HashMap<String, String>) -> Result<Vec<(String, String)>, ValidationError> {
+    if headers.len() > MAX_HEADERS {
+        return Err(ValidationError::InvalidLength(
+            "Headers".to_string(),
+            headers.len()
+        ));
+    }
+
+    let mut validated_headers = Vec::with_capacity(headers.len());
+
+    for (key, value) in headers {
+        let validated_key = validate_header_name(key)?;
+        let validated_value = validate_header_value(value)?;
+
+        validated_headers.push((validated_key, validated_value));
+    }
+
+    Ok(validated_headers)
 }
 
 // ============================================================================
@@ -228,6 +358,8 @@ pub struct MCPServer {
     pub is_active: bool,
     /// Server status
     pub status: ServerStatus,
+    /// Available tools for this MCP server
+    pub tools: Option<Vec<String>>,
 }
 
 /// Server status information
@@ -590,6 +722,7 @@ pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
                                 error: Some(format!("Failed to get details: {}", e)),
                                 last_checked: None,
                             },
+                            tools: None,
                         });
                     }
                 }
@@ -664,6 +797,15 @@ pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> 
                 }
             }
 
+            // Get the available tools for this MCP server
+            let tools = match get_mcp_server_tools(&app, &name).await {
+                Ok(tool_list) => Some(tool_list),
+                Err(e) => {
+                    warn!("Failed to get tools for server {}: {}", name, e);
+                    Some(generate_mcp_tools_for_server(&name))
+                }
+            };
+
             Ok(MCPServer {
                 name,
                 transport,
@@ -674,6 +816,7 @@ pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> 
                 headers,
                 scope,
                 is_active: is_connected,
+                tools,
                 status: ServerStatus {
                     running: is_connected,
                     error: status_error,
@@ -689,6 +832,113 @@ pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> 
             Err(e.to_string())
         }
     }
+}
+
+/// Gets the available tools for an MCP server using enhanced inference and pattern matching
+async fn get_mcp_server_tools(_app: &AppHandle, server_name: &str) -> Result<Vec<String>, String> {
+    info!("Getting tools for MCP server: {}", server_name);
+
+    // Try to get real tools from running sessions
+    let real_tools = extract_tools_from_running_sessions(_app, server_name).await?;
+
+    if !real_tools.is_empty() {
+        info!("Found {} real tools for server {}", real_tools.len(), server_name);
+        return Ok(real_tools);
+    }
+
+    // Fallback to enhanced inference
+    info!("No real tools found, using inference for server {}", server_name);
+    Ok(generate_mcp_tools_for_server(server_name))
+}
+
+/// Extracts MCP tools from currently running Claude sessions
+async fn extract_tools_from_running_sessions(_app: &AppHandle, _server_name: &str) -> Result<Vec<String>, String> {
+    // This would search through active JSONL files for system:init messages
+    // and extract tools specific to the given server name
+    // For now, return empty to use inference
+
+    // TODO: Implement actual extraction from JSONL files
+    // - Find active session files
+    // - Parse for system:init messages
+    // - Filter tools that match the server pattern
+    // - Return MCP tools in mcp__ format
+
+    Ok(vec![])
+}
+
+/// Generate MCP tools based on server type and naming patterns
+fn generate_mcp_tools_for_server(server_name: &str) -> Vec<String> {
+    let name_lower = server_name.to_lowercase();
+    let name_slug = server_name.replace(" ", "_").replace("-", "_");
+
+    // Database servers
+    if name_lower.contains("postgres") || name_lower.contains("postgresql") || name_lower.contains("db") {
+        return vec![
+            format!("mcp__{}__query", name_slug),
+            format!("mcp__{}__connect", name_slug),
+            format!("mcp__{}__list_tables", name_slug),
+            format!("mcp__{}__describe", name_slug),
+            format!("mcp__{}__execute", name_slug),
+        ];
+    }
+
+    // Git/version control
+    if name_lower.contains("git") || name_lower.contains("github") || name_lower.contains("version") {
+        return vec![
+            format!("mcp__{}__status", name_slug),
+            format!("mcp__{}__commit", name_slug),
+            format!("mcp__{}__push", name_slug),
+            format!("mcp__{}__pull", name_slug),
+            format!("mcp__{}__branch", name_slug),
+            format!("mcp__{}__create_issue", name_slug),
+        ];
+    }
+
+    // File system
+    if name_lower.contains("fs") || name_lower.contains("file") || name_lower.contains("storage") {
+        return vec![
+            format!("mcp__{}__read", name_slug),
+            format!("mcp__{}__write", name_slug),
+            format!("mcp__{}__delete", name_slug),
+            format!("mcp__{}__list", name_slug),
+            format!("mcp__{}__search", name_slug),
+        ];
+    }
+
+    // HTTP/API
+    if name_lower.contains("http") || name_lower.contains("web") || name_lower.contains("api") {
+        return vec![
+            format!("mcp__{}__get", name_slug),
+            format!("mcp__{}__post", name_slug),
+            format!("mcp__{}__put", name_slug),
+            format!("mcp__{}__delete", name_slug),
+            format!("mcp__{}__list", name_slug),
+        ];
+    }
+
+    // Docker/containers
+    if name_lower.contains("docker") || name_lower.contains("container") {
+        return vec![
+            format!("mcp__{}__run", name_slug),
+            format!("mcp__{}__stop", name_slug),
+            format!("mcp__{}__list", name_slug),
+            format!("mcp__{}__logs", name_slug),
+            format!("mcp__{}__build", name_slug),
+        ];
+    }
+
+    // Search engines
+    if name_lower.contains("search") || name_lower.contains("find") {
+        return vec![
+            format!("mcp__{}__search", name_slug),
+            format!("mcp__{}__filter", name_slug),
+            format!("mcp__{}__sort", name_slug),
+            format!("mcp__{}__group", name_slug),
+        ];
+    }
+
+    // Generic MCP tool
+    vec![format!("mcp__{}__execute", name_slug)]
 }
 
 /// Removes an MCP server

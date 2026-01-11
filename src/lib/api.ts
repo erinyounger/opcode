@@ -365,6 +365,8 @@ export interface MCPServer {
   is_active: boolean;
   /** Server status */
   status: ServerStatus;
+  /** Available tools for this MCP server */
+  tools?: string[];
 }
 
 /**
