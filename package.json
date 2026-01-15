@@ -1,7 +1,7 @@
 {
   "name": "opcode",
   "private": true,
-  "version": "0.2.109",
+  "version": "0.2.111",
   "license": "AGPL-3.0",
   "type": "module",
   "scripts": {

@@ -738,9 +738,9 @@ LSResultWidget.displayName = 'LSResultWidget';
  */
 export const ReadWidget: React.FC<{ filePath: string; result?: any }> = ({ filePath, result }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  
+
   // Extract result content if available
-    let resultContent = '';
+  let resultContent = '';
   if (result) {
     if (typeof result.content === 'string') {
       resultContent = result.content;
@@ -756,41 +756,44 @@ export const ReadWidget: React.FC<{ filePath: string; result?: any }> = ({ fileP
       }
     }
   }
-  
+
   // Build title: "Read" + filename
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
   const title = `Read ${fileName}`;
-  
+
   return (
     <div className="rounded-lg border border-gray-500/20 bg-gray-500/5 overflow-hidden">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-500/10 transition-colors"
-        disabled={!result}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <FileText className="h-4 w-4 text-primary flex-shrink-0" />
           <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">
             {title}
           </span>
-      {!result && (
+          {!result && (
             <div className="ml-2 flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-          <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-          <span>Loading...</span>
+              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+              <span>Loading...</span>
             </div>
           )}
         </div>
-        {result && (
-          <ChevronRight className={cn(
-            "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
-            isExpanded && "rotate-90"
-          )} />
-        )}
+        <ChevronRight className={cn(
+          "h-4 w-4 text-gray-500 transition-transform flex-shrink-0",
+          isExpanded && "rotate-90"
+        )} />
       </button>
-      
-      {isExpanded && result && resultContent && (
+
+      {(isExpanded || result) && (
         <div className="px-4 pb-4 pt-2 border-t border-gray-500/20">
-          <ReadResultWidget content={resultContent} filePath={filePath} />
+          {resultContent ? (
+            <ReadResultWidget content={resultContent} filePath={filePath} />
+          ) : (
+            <div className="text-xs text-muted-foreground italic">
+              {result ? "No content to display" : "Waiting for file content..."}
+            </div>
+          )}
         </div>
       )}
     </div>
